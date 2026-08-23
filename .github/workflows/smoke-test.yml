@@ -1,0 +1,118 @@
+name: "M1+Smoke: манифест APK и эмуляторный smoke test"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  m1-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Скачать последний успешный APK-артефакт
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?status=success&per_page=10" --jq '.workflow_runs | map(select(.head_branch == "main")) | .[0].id')
+          test -n "$RUN_ID"
+          echo "source run: $RUN_ID"
+          ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="mobile-agent-russkiy-debug-apk" and .expired==false) | .id' | head -1)
+          test -n "$ART_ID"
+          echo "artifact id: $ART_ID"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -o apk.zip \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
+          unzip -o apk.zip
+          APK=$(find . -maxdepth 2 -type f -name '*.apk' | head -1)
+          test -n "$APK"
+          cp "$APK" smoke.apk
+          ls -lh smoke.apk
+
+      - name: M1 — бинарное чтение манифеста (aapt2)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          "$BT/aapt2" dump badging smoke.apk | head -25 | tee badging.txt
+          grep -q "package: name='ru.mirsamozanyatykh.mobileagent'" badging.txt
+          grep -q "versionCode='3'" badging.txt
+          grep -q "versionName='2.1.1'" badging.txt
+          {
+            echo "### M1: aapt2 dump badging"
+            echo '```'
+            cat badging.txt
+            echo '```'
+            echo "M1 verdict: PASS — package/versionName/versionCode подтверждены бинарным чтением APK"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: KVM для ускорения эмулятора
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -al /dev/kvm
+
+      - name: Smoke test на эмуляторе
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          script: |
+            set -u
+            : > full-logcat.txt
+            : > crashes.txt
+            adb install -r smoke.apk 2>&1 | tee install.txt
+            adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1 2>&1 | tee launch.txt
+            sleep 60
+            PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent || true)
+            echo "PID_AFTER_60S=$PID" | tee pid.txt
+            adb logcat -d -v time > full-logcat.txt || true
+            grep -iE "FATAL EXCEPTION|AndroidRuntime|UnsatisfiedLinkError|Process .* has died" full-logcat.txt > crashes.txt || true
+            adb exec-out screencap -p > screenshot.png || true
+            test -s screenshot.png || true
+
+      - name: Вердикт в Job Summary
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          PID=""
+          [ -f pid.txt ] && PID=$(sed -n 's/^PID_AFTER_60S=//p' pid.txt | tail -1 || true)
+          {
+            echo "### Smoke verdict"
+            echo "PID после 60 сек: ${PID:-ПУСТО}"
+            if [ -s crashes.txt ]; then
+              echo "Smoke verdict: FAILED — найдены crash/signature записи"
+              echo '```'
+              head -50 crashes.txt
+              echo '```'
+            elif [ -n "$PID" ] && [ -s screenshot.png ]; then
+              echo "Smoke verdict: PASSED — процесс жив после 60 сек, crash/signature записи отсутствуют, screenshot создан"
+            else
+              echo "Smoke verdict: FAILED — процесс или screenshot не подтверждены"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Загрузить доказательства
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-evidence
+          path: |
+            smoke.apk
+            badging.txt
+            install.txt
+            launch.txt
+            pid.txt
+            full-logcat.txt
+            crashes.txt
+            screenshot.png
+          if-no-files-found: warn
