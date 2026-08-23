@@ -66,11 +66,19 @@ jobs:
           api-level: 30
           arch: x86_64
           script: |
-            set -u
-            APK=smoke.apk
-            adb install -r "$APK"
-            adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1
+            set -x
+            cd "$GITHUB_WORKSPACE"
+            pwd > where-am-i.txt
+            APK="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -name '*.apk' -print -quit)"
+            test -n "$APK" || { echo "::error::APK NOT FOUND"; exit 1; }
+            test -s "$APK" || { echo "::error::APK EMPTY"; exit 1; }
+            echo "APK=$APK"
+            adb install -r "$APK" || { echo "::error::INSTALL FAILED"; exit 1; }
+            echo "PHASE: INSTALL OK"
+            adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1 || echo "::warning::monkey rc=$? (continuing)"
+            echo "PHASE: LAUNCH SENT"
             sleep 60
+            echo "PHASE: SURVIVED 60s"
             PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
             PS_LINE=$(adb shell ps -A 2>/dev/null | tr -d '\r' | grep mirsamozanyatykh || true)
             RAW_RESUMED=$(adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E "ResumedActivity|topResumedActivity" | grep mirsamozanyatykh || true)
@@ -83,48 +91,38 @@ jobs:
             adb logcat -d -v time > full-logcat.txt || true
             grep -icE "FATAL EXCEPTION|AndroidRuntime|UnsatisfiedLinkError" full-logcat.txt > crash-count.txt || true
             adb exec-out screencap -p > screenshot.png || true
-            printf '%s' "$PID" > pid.txt
-            printf '%s\n' "$PS_LINE" > ps.txt
-            printf '%s\n' "$RAW_RESUMED" > resumed.txt
-            printf '%s\n' "$FOCUS" > focus.txt
-            printf '%s\n' "$JS_TEXTS" > js-ui.txt
-            printf '%s\n' "$DEVLAUNCH" > devlaunch-count.txt
+            W="$GITHUB_WORKSPACE"
+            printf '%s' "$PID" > "$W/pid.txt"
+            printf '%s\n' "$PS_LINE" > "$W/ps.txt"
+            printf '%s\n' "$RAW_RESUMED" > "$W/resumed.txt"
+            printf '%s\n' "$FOCUS" > "$W/focus.txt"
+            printf '%s\n' "$JS_TEXTS" > "$W/js-ui.txt"
+            printf '%s\n' "$DEVLAUNCH" > "$W/devlaunch-count.txt"
+            ls -la "$W" > "$W/inventory.txt" 2>&1 || true
             {
-              echo "### Probe v3.1"
+              echo "### Probe v3.2"
+              echo "cwd: $(cat where-am-i.txt)"
+              echo "APK used: $APK"
               echo "PID(secondary): '$PID'"
               echo ""
-              echo '```'
-              cat ps.txt
-              echo '```'
+              echo '```'; cat "$W/ps.txt"; echo '```'
               echo ""
-              echo '```'
-              cat resumed.txt
-              echo '```'
-              echo "Resumed activity class: $RESUMED_CLASS"
+              echo '```'; cat "$W/resumed.txt"; echo '```'
+              echo "Resumed class: $RESUMED_CLASS"
               echo ""
-              echo '```'
-              cat focus.txt
-              echo '```'
-              echo "DevLauncher-in-focus count: $DEVLAUNCH (informational)"
+              echo '```'; cat "$W/focus.txt"; echo '```'
+              echo "DevLauncher-in-focus: $DEVLAUNCH (informational)"
               echo ""
-              echo '```'
-              cat js-ui.txt
-              echo '```'
-              echo "Crash signatures: $(cat crash-count.txt)"
+              echo '```'; cat "$W/js-ui.txt"; echo '```'
+              echo "Crash signatures: $(cat "$W/crash-count.txt")"
             } >> "$GITHUB_STEP_SUMMARY"
-            CRASHES=$(cat crash-count.txt)
-            if [ "${CRASHES:-0}" -gt 0 ]; then
-              echo "::error::FAILED: crash signatures found"
-              exit 1
-            fi
-            if [ -z "$PS_LINE" ] && [ -z "$PID" ]; then
-              echo "::error::FAILED: no trace of process"
-              exit 1
-            fi
+            CRASHES=$(cat "$W/crash-count.txt")
+            if [ "${CRASHES:-0}" -gt 0 ]; then echo "::error::FAILED: crash signatures"; exit 1; fi
+            if [ -z "$PS_LINE" ] && [ -z "$PID" ]; then echo "::error::FAILED: no process trace"; exit 1; fi
             if [ -n "$PS_LINE" ] && [ -n "$RAW_RESUMED" ] && [ -n "$JS_TEXTS" ]; then
               echo "::notice::SMOKE PASSED: native alive + foreground + positive JS evidence"
             else
-              echo "::warning::INCONCLUSIVE: partial evidence set - review artifacts (js-ui.txt, screenshot.png)"
+              echo "::warning::INCONCLUSIVE: partial evidence set - review artifacts"
             fi
 
       - name: Проверить наличие evidence-файлов
@@ -134,7 +132,7 @@ jobs:
           set -u
           {
             echo "### Evidence inventory"
-            for f in pid.txt ps.txt resumed.txt focus.txt js-ui.txt devlaunch-count.txt crash-count.txt full-logcat.txt screenshot.png; do
+            for f in where-am-i.txt inventory.txt pid.txt ps.txt resumed.txt focus.txt js-ui.txt devlaunch-count.txt crash-count.txt full-logcat.txt screenshot.png; do
               if [ -e "$f" ]; then
                 echo "- $f: present"
               else
@@ -153,6 +151,8 @@ jobs:
             badging.txt
             install.txt
             launch.txt
+            where-am-i.txt
+            inventory.txt
             pid.txt
             ps.txt
             resumed.txt
