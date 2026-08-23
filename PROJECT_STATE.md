@@ -28,18 +28,31 @@ Build and stabilize the Android application «Мобильный ИИ-агент
 - M0 = ACHIEVED. [VERIFIED]
 
 ## M1 — APK static validation
-- APK artifact downloaded and unpacked. [VERIFIED]
+- APK artifact downloaded and unpacked from artifact 9497279429. [VERIFIED]
 - APK size: 458,315,137 bytes. [VERIFIED]
 - ABI directories: arm64-v8a, armeabi-v7a, x86, x86_64. [VERIFIED]
 - libbox.so present only under arm64-v8a. [VERIFIED]
-- Manifest package/version/versionCode inside the binary APK: [PENDING] — no aapt/apkanalyzer available in the inspection environment.
-- Real-device install and smoke test: [PENDING].
+- Binary AndroidManifest.xml contains package ru.mirsamozanyatykh.mobileagent and versionName 2.1.1. [VERIFIED]
+- Binary versionCode 3: [PENDING] — not yet decoded from the AXML typed attribute; source app.json says 3.
+- M1 manifest validation: [PARTIALLY VERIFIED].
+
+## libbox ABI / graceful degradation audit
+- Current build script does NOT call `gomobile bind -target=androidarm64`; it invokes sing-box `build_libbox` with `-target android -platform android/arm64`. [VERIFIED from scripts/build-libbox-android.sh]
+- Current APK therefore contains libbox.so only in arm64-v8a. [VERIFIED from APK]
+- Current `FirewallModule.kt` does not call `System.loadLibrary("box")`. [VERIFIED]
+- Current `FirewallVpnService.kt` constructs `LibboxForwardingBridge` and only marks firewall RUNNING after a successful bridge result. [VERIFIED]
+- Current `LibboxForwardingBridge.kt` checks `Class.forName("libbox.Libbox")`, but intentionally always returns `StartResult(false)` because the real PlatformInterface/OpenTun/CommandServer adapter is not wired yet. [VERIFIED]
+- Therefore the previously suspected unconditional static `System.loadLibrary("box")` crash is NOT present in the current main branch. [VERIFIED]
+- The actual current blocker is different: the firewall compatibility bridge does not start libbox and therefore cannot reach RUNNING. [VERIFIED]
+- Non-arm64 graceful degradation is still [UNVERIFIED] at runtime; no real-device/emulator smoke test has been performed.
 
 ## Next
-1. Complete binary manifest inspection.
-2. Install APK on Android and run smoke test.
-3. Fix only issues demonstrated by verification.
-4. Then implement memory, voice, avatar FSM, capability-aware tools and diagnostics.
+1. Complete binary versionCode decoding if needed.
+2. Install APK on a real Android device and run smoke test.
+3. Verify normal app launch independently of firewall.
+4. Verify firewall prepare/start/status behavior and capture logcat.
+5. Fix only issues demonstrated by runtime verification.
+6. Then implement memory, voice, avatar FSM, capability-aware tools and diagnostics.
 
 ## fullstack-agent audit
 Use architecture ideas only; do not copy AGPL code/text. Adopt independently: reactive avatar FSM, PTT-first voice, user data outside code, identity adoption, self-diagnostics, modular tool registry, honest offline/online separation.
