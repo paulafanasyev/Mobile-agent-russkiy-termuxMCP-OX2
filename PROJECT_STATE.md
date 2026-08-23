@@ -7,6 +7,7 @@ Build and stabilize the Android application «Мобильный ИИ-агент
 - Never claim work is done without factual verification.
 - Statuses: [VERIFIED], [PARTIALLY VERIFIED], [PENDING], [UNVERIFIED].
 - Re-check after every change.
+- Every load-bearing code claim records the exact file path.
 - Capability order: NO_PRIVILEGE → SHIZUKU_AVAILABLE → ROOT_AVAILABLE.
 - Shizuku is not root.
 - Offline baseline is required; online AI is additional.
@@ -39,12 +40,21 @@ Build and stabilize the Android application «Мобильный ИИ-агент
 ## libbox ABI / graceful degradation audit
 - Current build script does NOT call `gomobile bind -target=androidarm64`; it invokes sing-box `build_libbox` with `-target android -platform android/arm64`. [VERIFIED from scripts/build-libbox-android.sh]
 - Current APK therefore contains libbox.so only in arm64-v8a. [VERIFIED from APK]
-- Current `FirewallModule.kt` does not call `System.loadLibrary("box")`. [VERIFIED]
-- Current `FirewallVpnService.kt` constructs `LibboxForwardingBridge` and only marks firewall RUNNING after a successful bridge result. [VERIFIED]
-- Current `LibboxForwardingBridge.kt` checks `Class.forName("libbox.Libbox")`, but intentionally always returns `StartResult(false)` because the real PlatformInterface/OpenTun/CommandServer adapter is not wired yet. [VERIFIED]
+- Active `FirewallModule.kt` path: `modules/firewall/android/src/main/java/expo/modules/firewall/FirewallModule.kt`; it does not call `System.loadLibrary("box")`. [VERIFIED]
+- `FirewallVpnService.kt` at `modules/firewall/android/src/main/java/expo/modules/firewall/FirewallVpnService.kt` constructs `LibboxForwardingBridge` and only marks firewall RUNNING after a successful bridge result. [VERIFIED]
+- `LibboxForwardingBridge.kt` at `modules/firewall/android/src/main/java/com/mobileshell/firewall/LibboxForwardingBridge.kt` checks `Class.forName("libbox.Libbox")`, but intentionally always returns `StartResult(false)` because the real PlatformInterface/OpenTun/CommandServer adapter is not wired yet. [VERIFIED]
 - Therefore the previously suspected unconditional static `System.loadLibrary("box")` crash is NOT present in the current main branch. [VERIFIED]
 - The actual current blocker is different: the firewall compatibility bridge does not start libbox and therefore cannot reach RUNNING. [VERIFIED]
 - Non-arm64 graceful degradation is still [UNVERIFIED] at runtime; no real-device/emulator smoke test has been performed.
+
+## Cycle 16 — INCIDENT #2 + firewall truth
+- OX Alpha cycle-15 audit contained false [VERIFIED] claims: nonexistent `System.loadLibrary("box")` in active FirewallModule.kt; fabricated workflow command quote. Cause: wrong-source file read among duplicate java dirs, then status was asserted without reproducible path verification.
+- FIX #3 is withdrawn completely. Do not implement a fix for nonexistent code.
+- Process correction: every load-bearing code claim now cites the exact file path.
+- REAL firewall status [VERIFIED by independent reads]: libbox.so is packaged and detectable; `LibboxForwardingBridge` intentionally returns `StartResult(false)` until the real PlatformInterface/OpenTun/CommandServer adapter is implemented; `FirewallVpnService` gates RUNNING on bridge success.
+- This is an UNIMPLEMENTED FEATURE, not a proven build/runtime crash.
+- Journal correction commit: 2527c060a9e682cd7900df6e0b62a4fae7acfa5f.
+- M1 is not closed until binary versionCode and runtime smoke test are complete.
 
 ## Next
 1. Complete binary versionCode decoding if needed.
@@ -52,7 +62,8 @@ Build and stabilize the Android application «Мобильный ИИ-агент
 3. Verify normal app launch independently of firewall.
 4. Verify firewall prepare/start/status behavior and capture logcat.
 5. Fix only issues demonstrated by runtime verification.
-6. Then implement memory, voice, avatar FSM, capability-aware tools and diagnostics.
+6. Then perform a dedicated LibboxForwardingBridge audit and implement the real adapter.
+7. Rebuild and repeat smoke test.
 
 ## fullstack-agent audit
 Use architecture ideas only; do not copy AGPL code/text. Adopt independently: reactive avatar FSM, PTT-first voice, user data outside code, identity adoption, self-diagnostics, modular tool registry, honest offline/online separation.
