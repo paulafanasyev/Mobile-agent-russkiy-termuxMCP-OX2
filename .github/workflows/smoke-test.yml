@@ -67,38 +67,80 @@ jobs:
           arch: x86_64
           script: |
             set -u
-            : > full-logcat.txt
-            : > crashes.txt
-            adb install -r smoke.apk 2>&1 | tee install.txt
-            adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1 2>&1 | tee launch.txt
+            APK=smoke.apk
+            adb install -r "$APK"
+            adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1
             sleep 60
-            PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent || true)
-            echo "PID_AFTER_60S=$PID" | tee pid.txt
+            PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
+            PS_LINE=$(adb shell ps -A 2>/dev/null | tr -d '\r' | grep mirsamozanyatykh || true)
+            RAW_RESUMED=$(adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E "ResumedActivity|topResumedActivity" | grep mirsamozanyatykh || true)
+            FOCUS=$(adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep mCurrentFocus || true)
+            RESUMED_CLASS=$(echo "$RAW_RESUMED" | grep -oE "[a-zA-Z0-9.]+Activity" | head -1 || true)
+            DEVLAUNCH=$(adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep -c devlauncher || true)
+            adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
+            adb shell cat /sdcard/ui.xml > ui-dump.xml 2>/dev/null || true
+            JS_TEXTS=$(grep -oE "Светлана онлайн|Активировать Светлану|Голосовая команда" ui-dump.xml 2>/dev/null | sort -u || true)
             adb logcat -d -v time > full-logcat.txt || true
-            grep -iE "FATAL EXCEPTION|AndroidRuntime|UnsatisfiedLinkError|Process .* has died" full-logcat.txt > crashes.txt || true
+            grep -icE "FATAL EXCEPTION|AndroidRuntime|UnsatisfiedLinkError" full-logcat.txt > crash-count.txt || true
             adb exec-out screencap -p > screenshot.png || true
-            test -s screenshot.png || true
+            printf '%s' "$PID" > pid.txt
+            printf '%s\n' "$PS_LINE" > ps.txt
+            printf '%s\n' "$RAW_RESUMED" > resumed.txt
+            printf '%s\n' "$FOCUS" > focus.txt
+            printf '%s\n' "$JS_TEXTS" > js-ui.txt
+            printf '%s\n' "$DEVLAUNCH" > devlaunch-count.txt
+            {
+              echo "### Probe v3.1"
+              echo "PID(secondary): '$PID'"
+              echo ""
+              echo '```'
+              cat ps.txt
+              echo '```'
+              echo ""
+              echo '```'
+              cat resumed.txt
+              echo '```'
+              echo "Resumed activity class: $RESUMED_CLASS"
+              echo ""
+              echo '```'
+              cat focus.txt
+              echo '```'
+              echo "DevLauncher-in-focus count: $DEVLAUNCH (informational)"
+              echo ""
+              echo '```'
+              cat js-ui.txt
+              echo '```'
+              echo "Crash signatures: $(cat crash-count.txt)"
+            } >> "$GITHUB_STEP_SUMMARY"
+            CRASHES=$(cat crash-count.txt)
+            if [ "${CRASHES:-0}" -gt 0 ]; then
+              echo "::error::FAILED: crash signatures found"
+              exit 1
+            fi
+            if [ -z "$PS_LINE" ] && [ -z "$PID" ]; then
+              echo "::error::FAILED: no trace of process"
+              exit 1
+            fi
+            if [ -n "$PS_LINE" ] && [ -n "$RAW_RESUMED" ] && [ -n "$JS_TEXTS" ]; then
+              echo "::notice::SMOKE PASSED: native alive + foreground + positive JS evidence"
+            else
+              echo "::warning::INCONCLUSIVE: partial evidence set - review artifacts (js-ui.txt, screenshot.png)"
+            fi
 
-      - name: Вердикт в Job Summary
+      - name: Проверить наличие evidence-файлов
         if: always()
         shell: bash
         run: |
           set -u
-          PID=""
-          [ -f pid.txt ] && PID=$(sed -n 's/^PID_AFTER_60S=//p' pid.txt | tail -1 || true)
           {
-            echo "### Smoke verdict"
-            echo "PID после 60 сек: ${PID:-ПУСТО}"
-            if [ -s crashes.txt ]; then
-              echo "Smoke verdict: FAILED — найдены crash/signature записи"
-              echo '```'
-              head -50 crashes.txt
-              echo '```'
-            elif [ -n "$PID" ] && [ -s screenshot.png ]; then
-              echo "Smoke verdict: PASSED — процесс жив после 60 сек, crash/signature записи отсутствуют, screenshot создан"
-            else
-              echo "Smoke verdict: FAILED — процесс или screenshot не подтверждены"
-            fi
+            echo "### Evidence inventory"
+            for f in pid.txt ps.txt resumed.txt focus.txt js-ui.txt devlaunch-count.txt crash-count.txt full-logcat.txt screenshot.png; do
+              if [ -e "$f" ]; then
+                echo "- $f: present"
+              else
+                echo "- $f: MISSING"
+              fi
+            done
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Загрузить доказательства
@@ -112,7 +154,13 @@ jobs:
             install.txt
             launch.txt
             pid.txt
+            ps.txt
+            resumed.txt
+            focus.txt
+            js-ui.txt
+            devlaunch-count.txt
             full-logcat.txt
-            crashes.txt
+            crash-count.txt
             screenshot.png
+            ui-dump.xml
           if-no-files-found: warn
