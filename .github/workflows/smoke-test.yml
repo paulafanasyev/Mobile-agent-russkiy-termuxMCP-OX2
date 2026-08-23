@@ -1,7 +1,15 @@
-name: "M1+Smoke: манифест APK и эмуляторный smoke test"
+name: "M1+Smoke: манифест APK и эмуляторный smoke test (provenance-bound)"
 
 on:
   workflow_dispatch:
+    inputs:
+      android_run_id:
+        description: 'ID рана Android APK Release (обязателен для ручного запуска)'
+        required: false
+        default: ''
+  workflow_run:
+    workflows: ["Android APK Release"]
+    types: [completed]
 
 permissions:
   actions: read
@@ -9,58 +17,61 @@ permissions:
 
 jobs:
   m1-smoke:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
-      - name: Скачать последний успешный APK-артефакт
+      - name: Provenance — привязать APK к конкретному Android-рану
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
+          INPUT_RUN_ID: ${{ github.event.inputs.android_run_id }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?status=success&per_page=10" --jq '.workflow_runs | map(select(.head_branch == "main")) | .[0].id')
-          test -n "$RUN_ID"
-          echo "source run: $RUN_ID"
+          if [ -n "$INPUT_RUN_ID" ]; then RUN_ID="$INPUT_RUN_ID"; elif [ -n "$EVENT_RUN_ID" ]; then RUN_ID="$EVENT_RUN_ID"; else echo "::error::Нет источника run id"; exit 1; fi
+          SOURCE_SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.head_sha')
+          SOURCE_CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')
+          test "$SOURCE_CONCLUSION" = success || { echo "::error::APK source run $RUN_ID is not successful: $SOURCE_CONCLUSION"; exit 1; }
+          {
+            echo "smoke_head_sha=$GITHUB_SHA"
+            echo "apk_source_run=$RUN_ID"
+            echo "apk_source_head_sha=$SOURCE_SHA"
+            echo "apk_source_conclusion=$SOURCE_CONCLUSION"
+          } | tee provenance.txt
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          cat provenance.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Скачать APK строго из привязанного рана
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="mobile-agent-russkiy-debug-apk" and .expired==false) | .id' | head -1)
-          test -n "$ART_ID"
-          echo "artifact id: $ART_ID"
-          curl --fail --silent --show-error --location \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -o apk.zip \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
+          test -n "$ART_ID" || { echo "::error::Артефакт APK не найден в ранe $RUN_ID"; exit 1; }
+          curl --fail --silent --show-error --location -H "Authorization: Bearer $GH_TOKEN" -o apk.zip "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
           unzip -o apk.zip
           APK=$(find . -maxdepth 2 -type f -name '*.apk' | head -1)
           test -n "$APK"
           cp "$APK" smoke.apk
           ls -lh smoke.apk
 
-      - name: M1 — бинарное чтение манифеста (aapt2)
-        shell: bash
+      - name: M1 — бинарное чтение манифеста (aapt2 hard-gate)
         run: |
           set -euo pipefail
           BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
-          "$BT/aapt2" dump badging smoke.apk | head -25 | tee badging.txt
-          grep -q "package: name='ru.mirsamozanyatykh.mobileagent'" badging.txt
-          grep -q "versionCode='3'" badging.txt
-          grep -q "versionName='2.1.1'" badging.txt
-          {
-            echo "### M1: aapt2 dump badging"
-            echo '```'
-            cat badging.txt
-            echo '```'
-            echo "M1 verdict: PASS — package/versionName/versionCode подтверждены бинарным чтением APK"
-          } >> "$GITHUB_STEP_SUMMARY"
+          BADGE=$("$BT/aapt2" dump badging smoke.apk | head -25)
+          echo "$BADGE" | tee badging.txt
+          echo "$BADGE" | grep -q "package: name='ru.mirsamozanyatykh.mobileagent'"
+          echo "$BADGE" | grep -q "versionName='2.1.1'"
+          echo "$BADGE" | grep -q "versionCode='3'"
+          { echo "### M1 OK"; echo '```'; echo "$BADGE"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: KVM для ускорения эмулятора
-        shell: bash
+      - name: KVM
         run: |
-          set -euo pipefail
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          ls -al /dev/kvm
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
-      - name: Smoke test на эмуляторе
+      - name: Smoke v3.2 на эмуляторе
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -104,16 +115,12 @@ jobs:
               echo "cwd: $(cat where-am-i.txt)"
               echo "APK used: $APK"
               echo "PID(secondary): '$PID'"
-              echo ""
-              echo '```'; cat "$W/ps.txt"; echo '```'
-              echo ""
-              echo '```'; cat "$W/resumed.txt"; echo '```'
+              echo ""; echo '```'; cat "$W/ps.txt"; echo '```'
+              echo ""; echo '```'; cat "$W/resumed.txt"; echo '```'
               echo "Resumed class: $RESUMED_CLASS"
-              echo ""
-              echo '```'; cat "$W/focus.txt"; echo '```'
+              echo ""; echo '```'; cat "$W/focus.txt"; echo '```'
               echo "DevLauncher-in-focus: $DEVLAUNCH (informational)"
-              echo ""
-              echo '```'; cat "$W/js-ui.txt"; echo '```'
+              echo ""; echo '```'; cat "$W/js-ui.txt"; echo '```'
               echo "Crash signatures: $(cat "$W/crash-count.txt")"
             } >> "$GITHUB_STEP_SUMMARY"
             CRASHES=$(cat "$W/crash-count.txt")
@@ -122,45 +129,28 @@ jobs:
             if [ -n "$PS_LINE" ] && [ -n "$RAW_RESUMED" ] && [ -n "$JS_TEXTS" ]; then
               echo "::notice::SMOKE PASSED: native alive + foreground + positive JS evidence"
             else
-              echo "::warning::INCONCLUSIVE: partial evidence set - review artifacts"
+              echo "::warning::INCONCLUSIVE: partial evidence set"
             fi
 
-      - name: Проверить наличие evidence-файлов
-        if: always()
-        shell: bash
-        run: |
-          set -u
-          {
-            echo "### Evidence inventory"
-            for f in where-am-i.txt inventory.txt pid.txt ps.txt resumed.txt focus.txt js-ui.txt devlaunch-count.txt crash-count.txt full-logcat.txt screenshot.png; do
-              if [ -e "$f" ]; then
-                echo "- $f: present"
-              else
-                echo "- $f: MISSING"
-              fi
-            done
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Загрузить доказательства
+      - name: Evidence upload (включая provenance)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-evidence
           path: |
-            smoke.apk
-            badging.txt
-            install.txt
-            launch.txt
-            where-am-i.txt
-            inventory.txt
+            provenance.txt
             pid.txt
             ps.txt
             resumed.txt
             focus.txt
             js-ui.txt
             devlaunch-count.txt
-            full-logcat.txt
             crash-count.txt
-            screenshot.png
+            inventory.txt
+            where-am-i.txt
             ui-dump.xml
+            badging.txt
+            full-logcat.txt
+            screenshot.png
+            smoke.apk
           if-no-files-found: warn
