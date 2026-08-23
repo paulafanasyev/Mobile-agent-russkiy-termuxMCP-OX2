@@ -1,15 +1,15 @@
-apply plugin: 'com.android.library'
-apply plugin: 'expo-module-gradle-plugin'
-
-android {
-  namespace 'expo.modules.rootaccess'
-  compileSdkVersion project.ext.has('compileSdkVersion') ? project.ext.compileSdkVersion : 35
-
-  defaultConfig {
-    minSdkVersion project.ext.has('minSdkVersion') ? project.ext.minSdkVersion : 24
-  }
+plugins {
+    id 'expo-module-gradle-plugin'
 }
 
-dependencies {
-  implementation project(':expo-modules-core')
+group = 'expo.modules.rootaccess'
+version = '1.0.0'
+
+android {
+    namespace 'expo.modules.rootaccess'
+
+    defaultConfig {
+        versionCode 1
+        versionName "1.0.0"
+    }
 }
