@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       smoke_run_id:
-        description: "Smoke workflow run ID to inspect (empty = latest completed smoke run)"
-        required: false
+        description: "Smoke workflow run ID to inspect (explicit; required for manual forensic)"
+        required: true
         default: ""
 
 permissions:
@@ -21,22 +21,38 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Resolve target smoke run
+      - name: Resolve target smoke run (event-first, HARD-STOP, no substitution)
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_RUN_ID: ${{ inputs.smoke_run_id }}
-          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.smoke_run_id || '' }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id || '' }}
         run: |
           set -euo pipefail
-          RUN_ID="${INPUT_RUN_ID:-}"
-          if [ -z "$RUN_ID" ]; then RUN_ID="${EVENT_RUN_ID:-}"; fi
-          if [ -z "$RUN_ID" ]; then
-            RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/smoke-test.yml/runs?per_page=20" --jq '.workflow_runs[] | select(.id != '"$GITHUB_RUN_ID"' and .status == "completed") | .id' | head -1)
+          if [ -n "$EVENT_RUN_ID" ]; then
+            RUN_ID="$EVENT_RUN_ID"
+            SOURCE="workflow_run-event"
+          elif [ -n "$INPUT_RUN_ID" ]; then
+            RUN_ID="$INPUT_RUN_ID"
+            SOURCE="manual-explicit"
+          else
+            echo "::error::HARD STOP: no target source (neither workflow_run.id nor explicit smoke_run_id)."
+            echo "::error::Automatic search of another run is FORBIDDEN by provenance rule."
+            exit 1
           fi
-          test -n "$RUN_ID" || { echo "::error::No completed smoke run found"; exit 1; }
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '{id,status,conclusion,head_sha,event,created_at}' | tee target-run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '{id,status,conclusion,head_sha,event,created_at}' | tee target-run.json >> "$GITHUB_STEP_SUMMARY"
+          N=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" --jq '[.artifacts[] | select(.name=="smoke-evidence" and .expired==false)] | length')
+          if [ "$N" -eq 0 ]; then
+            echo "::error::HARD STOP: smoke-run $RUN_ID has NO living smoke-evidence."
+            echo "::error::Substituting another run is FORBIDDEN. Run a fresh smoke instead."
+            exit 1
+          fi
+          {
+            echo "forensic_target_run=$RUN_ID"
+            echo "resolution_source=$SOURCE"
+            echo "artifact_alive=yes"
+            echo "resolved_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } | tee provenance-forensic.txt >> "$GITHUB_STEP_SUMMARY"
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
-          echo "Target smoke run: $RUN_ID" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Download smoke-evidence artifact from target run
         env:
@@ -45,10 +61,12 @@ jobs:
           set -euo pipefail
           mkdir -p evidence/unpacked
           ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" --jq '.artifacts[] | select(.name=="smoke-evidence" and .expired==false) | .id' | head -1)
-          test -n "$ART_ID" || { echo "::error::smoke-evidence unavailable for run $RUN_ID"; exit 1; }
+          test -n "$ART_ID" || { echo "::error::smoke-evidence unavailable for exact target run $RUN_ID"; exit 1; }
           echo "Artifact ID: $ART_ID"
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip" > evidence/artifact.zip
-          test -s evidence/artifact.zip
+          HTTP=$(curl -sL -w '%{http_code}' -o evidence/artifact.zip -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip")
+          echo "Artifact download HTTP=$HTTP" >> "$GITHUB_STEP_SUMMARY"
+          [ "$HTTP" = "200" ] || { echo "::error::Artifact download returned HTTP $HTTP for exact target run $RUN_ID"; exit 1; }
+          unzip -t evidence/artifact.zip >/dev/null
           unzip -o evidence/artifact.zip -d evidence/unpacked >/dev/null
           find evidence/unpacked -maxdepth 1 -type f -printf '%f\n' | sort
 
@@ -102,6 +120,7 @@ jobs:
           name: smoke-forensic-${{ env.RUN_ID }}
           path: |
             target-run.json
+            provenance-forensic.txt
             forensic-report.txt
             evidence/unpacked/forensic-*.txt
             evidence/unpacked/full-logcat.txt
