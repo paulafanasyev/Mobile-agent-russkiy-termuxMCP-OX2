@@ -137,6 +137,12 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew assembleDebug --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-debug.log"
+      - name: Собрать release APK
+        working-directory: android
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-release.log"
       - name: Сохранить полный Gradle лог при ошибке
         if: ${{ failure() }}
         uses: actions/upload-artifact@v5
@@ -144,6 +150,7 @@ jobs:
           name: android-gradle-diagnostics-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/gradle-assemble-debug.log
+            ${{ runner.temp }}/gradle-assemble-release.log
             ${{ runner.temp }}/libbox-build.log
             android/local.properties
           if-no-files-found: warn
@@ -162,8 +169,15 @@ jobs:
           name: mobile-agent-russkiy-debug-apk
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
+      - name: Загрузить release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-agent-russkiy-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
       - name: Опубликовать сведения о сборке
         run: |
           echo "libbox revision: $(cat build/native/sing-box-revision.txt)"
           echo "libbox SHA256: $(cut -d' ' -f1 build/native/libbox.aar.sha256)"
           echo "Preflight: SDK API 21/23/35/36 + NDK 28 + Maven libbox + AAR checksum + CommandServer проверены"
+          echo "Release APK: android/app/build/outputs/apk/release/*.apk"
