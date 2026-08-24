@@ -1,12 +1,15 @@
 name: Smoke forensic evidence
 
 on:
+  workflow_run:
+    workflows: ["M1+Smoke: манифест APK и эмуляторный smoke test (provenance-bound)"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       smoke_run_id:
         description: "Smoke workflow run ID to inspect"
         required: true
-        default: "32664421790"
+        default: ""
 
 permissions:
   actions: read
@@ -14,101 +17,75 @@ permissions:
 
 jobs:
   forensic:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != '' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
+      - name: Resolve target smoke run
+        env:
+          INPUT_RUN_ID: ${{ inputs.smoke_run_id }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          RUN_ID="${INPUT_RUN_ID:-}"
+          if [ -z "$RUN_ID" ]; then RUN_ID="${EVENT_RUN_ID:-}"; fi
+          test -n "$RUN_ID" || { echo "::error::No smoke run id"; exit 1; }
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "Target smoke run: $RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Download smoke-evidence artifact from target run
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.smoke_run_id }}
         run: |
           set -euo pipefail
-          mkdir -p evidence
+          mkdir -p evidence/unpacked
           ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="smoke-evidence" and .expired==false) | .id' | head -1)
-          test -n "$ART_ID" || { echo "::error::smoke-evidence artifact not found for run $RUN_ID"; exit 1; }
+          test -n "$ART_ID" || { echo "::error::smoke-evidence unavailable for run $RUN_ID"; gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '{id,status,conclusion,head_sha}' || true; exit 1; }
           echo "Artifact ID: $ART_ID"
-          curl --fail --silent --show-error --location \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -o evidence/artifact.zip \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip" > evidence/artifact.zip
           unzip -o evidence/artifact.zip -d evidence/unpacked >/dev/null
           find evidence/unpacked -maxdepth 1 -type f -printf '%f\n' | sort
 
-      - name: Analyze crash evidence without double-counting signatures
+      - name: Analyze crash evidence
         run: |
           set -euo pipefail
           E="evidence/unpacked"
           LOG="$E/full-logcat.txt"
-          REPORT="forensic-report.txt"
           test -f "$LOG" || { echo "::error::full-logcat.txt missing"; exit 1; }
-
           awk '
-            function flush_block() {
-              if (!in_block) return
-              total++
-              if (app_seen) app++
-              if (unsat_seen) unsat++
-            }
-            /FATAL EXCEPTION/ {
-              flush_block()
-              in_block=1
-              app_seen=0
-              unsat_seen=0
-              next
-            }
-            in_block && /Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)/ { app_seen=1 }
-            in_block && /UnsatisfiedLinkError/ { unsat_seen=1 }
-            END {
-              flush_block()
-              print total+0 > "evidence/unpacked/forensic-crash-total.txt"
-              print app+0 > "evidence/unpacked/forensic-app-attributed.txt"
-              print unsat+0 > "evidence/unpacked/forensic-unsatisfied-link-error.txt"
-            }
+            function flush() { if (!in_block) return; total++; if (app) app_total++; if (unsat) unsat_total++ }
+            /FATAL EXCEPTION/ { flush(); in_block=1; app=0; unsat=0; next }
+            in_block && /Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)/ { app=1 }
+            in_block && /UnsatisfiedLinkError/ { unsat=1 }
+            END { flush(); print total+0 > "'$E'/forensic-fatal-blocks.txt"; print app_total+0 > "'$E'/forensic-app-attributed.txt"; print unsat_total+0 > "'$E'/forensic-unsatisfied-link-error.txt" }
           ' "$LOG"
-
-          awk '
-            /FATAL EXCEPTION/ {
-              if (in_block) printf "%s", block > "evidence/unpacked/forensic-crash-blocks.txt"
-              block=$0 "\n"
-              in_block=1
-              next
-            }
-            in_block { block=block $0 "\n" }
-            END { if (in_block) printf "%s", block > "evidence/unpacked/forensic-crash-blocks.txt" }
-          ' "$LOG"
-
+          awk '/FATAL EXCEPTION/ { if (in_block) printf "%s", block > "'$E'/forensic-crash-blocks.txt"; block=$0 "\n"; in_block=1; next } in_block { block=block $0 "\n" } END { if (in_block) printf "%s", block > "'$E'/forensic-crash-blocks.txt" }' "$LOG"
           {
             echo "Smoke forensic report"
             echo "====================="
-            echo "Run ID: ${{ inputs.smoke_run_id }}"
-            echo ""
-            echo "FATAL EXCEPTION blocks: $(cat "$E/forensic-crash-total.txt")"
+            echo "Run ID: $RUN_ID"
+            echo "FATAL EXCEPTION blocks: $(cat "$E/forensic-fatal-blocks.txt")"
             echo "App-attributed blocks: $(cat "$E/forensic-app-attributed.txt")"
-            echo "UnsatisfiedLinkError inside fatal blocks: $(cat "$E/forensic-unsatisfied-link-error.txt")"
+            echo "UnsatisfiedLinkError in fatal blocks: $(cat "$E/forensic-unsatisfied-link-error.txt")"
             echo ""
             echo "--- crash blocks ---"
             cat "$E/forensic-crash-blocks.txt" 2>/dev/null || true
             echo ""
             echo "--- process evidence ---"
-            for f in pid.txt ps.txt resumed.txt focus.txt launch-time.txt restore-flag.txt apk-sha256.txt; do
-              echo "### $f"
-              cat "$E/$f" 2>/dev/null || echo "<missing>"
-            done
-          } | tee "$REPORT"
+            for f in pid.txt ps.txt resumed.txt focus.txt launch-time.txt restore-flag.txt apk-sha256.txt; do echo "### $f"; cat "$E/$f" 2>/dev/null || echo "<missing>"; done
+          } | tee forensic-report.txt
 
       - name: Publish forensic summary
         if: always()
         run: |
           {
             echo "## Smoke forensic"
-            echo "Run: ${{ inputs.smoke_run_id }}"
-            echo ""
-            echo "FATAL blocks: $(cat evidence/unpacked/forensic-crash-total.txt 2>/dev/null || echo missing)"
+            echo "Run: $RUN_ID"
+            echo "FATAL blocks: $(cat evidence/unpacked/forensic-fatal-blocks.txt 2>/dev/null || echo missing)"
             echo "App-attributed: $(cat evidence/unpacked/forensic-app-attributed.txt 2>/dev/null || echo missing)"
             echo "UnsatisfiedLinkError: $(cat evidence/unpacked/forensic-unsatisfied-link-error.txt 2>/dev/null || echo missing)"
-            echo ""
             echo '```text'
-            head -120 evidence/unpacked/forensic-crash-blocks.txt 2>/dev/null || true
+            head -160 evidence/unpacked/forensic-crash-blocks.txt 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -116,11 +93,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-forensic-${{ inputs.smoke_run_id }}
+          name: smoke-forensic-${{ env.RUN_ID }}
           path: |
             forensic-report.txt
             evidence/unpacked/forensic-*.txt
-            evidence/unpacked/crash-blocks.txt
             evidence/unpacked/full-logcat.txt
             evidence/unpacked/pid.txt
             evidence/unpacked/ps.txt
