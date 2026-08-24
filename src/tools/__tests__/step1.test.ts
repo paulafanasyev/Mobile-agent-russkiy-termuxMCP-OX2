@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest';
 import {
   CAPABILITY_LEVELS,
   RISK_LEVELS,
