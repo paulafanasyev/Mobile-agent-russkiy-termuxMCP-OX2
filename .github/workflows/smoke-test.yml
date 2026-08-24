@@ -116,30 +116,93 @@ jobs:
           adb shell cat /sdcard/ui.xml > ui-dump.xml 2>/dev/null || true
           JS_TEXTS=$(grep -oE "Светлана онлайн|Активировать Светлану|Голосовая команда" ui-dump.xml 2>/dev/null | sort -u || true)
           adb logcat -d -v time > full-logcat.txt || true
-          CRASH_TOTAL=$(grep -icE "FATAL EXCEPTION|AndroidRuntime|UnsatisfiedLinkError" full-logcat.txt || true)
-          APP_ATTRIBUTED=$(grep -A5 -E "FATAL EXCEPTION|AndroidRuntime|UnsatisfiedLinkError" full-logcat.txt | grep -c "ru.mirsamozanyatykh.mobileagent" || true)
-          printf '%s\n' "$CRASH_TOTAL" > crash-total.txt
-          printf '%s\n' "$APP_ATTRIBUTED" > crash-app-attributed.txt
-          grep -A12 -E "FATAL EXCEPTION|AndroidRuntime|UnsatisfiedLinkError" full-logcat.txt > crash-blocks.txt || true
-          adb exec-out screencap -p > screenshot.png || true
-          W="$GITHUB_WORKSPACE"
-          printf '%s' "$PID" > "$W/pid.txt"
-          printf '%s\n' "$PS_LINE" > "$W/ps.txt"
-          printf '%s\n' "$RAW_RESUMED" > "$W/resumed.txt"
-          printf '%s\n' "$FOCUS" > "$W/focus.txt"
-          printf '%s\n' "$JS_TEXTS" > "$W/js-ui.txt"
-          printf '%s\n' "$DEVLAUNCH" > "$W/devlaunch-count.txt"
-          ls -la "$W" > "$W/inventory.txt" 2>&1 || true
-          { echo "### Probe v3.4"; echo "cwd: $(cat where-am-i.txt)"; echo "APK used: $APK"; echo "RESTORED: $(cat restore-flag.txt)"; echo "installed_sha256: $(cat apk-sha256.txt)"; echo "PID(secondary): '$PID'"; echo "Resumed class: $RESUMED_CLASS"; echo "DevLauncher-in-focus: $DEVLAUNCH (informational)"; echo "Crash total: $CRASH_TOTAL"; echo "App attributed: $APP_ATTRIBUTED"; echo ""; echo '```'; cat "$W/ps.txt"; echo '```'; echo ""; echo '```'; cat "$W/resumed.txt"; echo '```'; echo ""; echo '```'; cat "$W/focus.txt"; echo '```'; echo ""; echo '```'; cat "$W/js-ui.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+          # Forensic crash accounting: one FATAL EXCEPTION block = one crash event.
+          # AndroidRuntime and UnsatisfiedLinkError are recorded separately and are
+          # never counted as additional crashes merely because they occur inside the same block.
+          awk '
+            function flush_block() {
+              if (!in_block) return
+              fatal_count++
+              if (app_seen) app_count++
+              if (unsat_seen) unsat_count++
+            }
+            /FATAL EXCEPTION/ {
+              flush_block()
+              in_block=1
+              app_seen=0
+              unsat_seen=0
+              next
+            }
+            in_block && /Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)/ { app_seen=1 }
+            in_block && /UnsatisfiedLinkError/ { unsat_seen=1 }
+            END {
+              flush_block()
+              print fatal_count+0 > "crash-total.txt"
+              print app_count+0 > "crash-app-attributed.txt"
+              print unsat_count+0 > "crash-unsatisfied-link-error.txt"
+            }
+          ' full-logcat.txt
+
+          CRASH_TOTAL=$(cat crash-total.txt)
+          APP_ATTRIBUTED=$(cat crash-app-attributed.txt)
+          UNSAT_ATTRIBUTED=$(cat crash-unsatisfied-link-error.txt)
+
+          awk '
+            /FATAL EXCEPTION/ {
+              if (in_block) printf "%s", block > "crash-blocks.txt"
+              block=$0 "\n"
+              in_block=1
+              next
+            }
+            in_block { block=block $0 "\n" }
+            END { if (in_block) printf "%s", block > "crash-blocks.txt" }
+          ' full-logcat.txt
+
+          : > crash-count.txt
+          printf '%s\n' "$CRASH_TOTAL" > crash-count.txt
+          printf '%s\n' "$PID" > pid.txt
+          printf '%s\n' "$PS_LINE" > ps.txt
+          printf '%s\n' "$RAW_RESUMED" > resumed.txt
+          printf '%s\n' "$FOCUS" > focus.txt
+          printf '%s\n' "$JS_TEXTS" > js-ui.txt
+          printf '%s\n' "$DEVLAUNCH" > devlaunch-count.txt
+          ls -la "$GITHUB_WORKSPACE" > inventory.txt 2>&1 || true
+          {
+            echo "### Probe v3.5"
+            echo "cwd: $(cat where-am-i.txt)"
+            echo "APK used: $APK"
+            echo "RESTORED: $(cat restore-flag.txt)"
+            echo "installed_sha256: $(cat apk-sha256.txt)"
+            echo "PID(secondary): '$PID'"
+            echo "Resumed class: $RESUMED_CLASS"
+            echo "DevLauncher-in-focus: $DEVLAUNCH (informational)"
+            echo "Crash events (FATAL blocks): $CRASH_TOTAL"
+            echo "App-attributed crash events: $APP_ATTRIBUTED"
+            echo "UnsatisfiedLinkError events inside fatal blocks: $UNSAT_ATTRIBUTED"
+            echo ""
+            echo '```'; cat ps.txt; echo '```'
+            echo '```'; cat resumed.txt; echo '```'
+            echo '```'; cat focus.txt; echo '```'
+            echo '```'; cat js-ui.txt; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
           if [ "${APP_ATTRIBUTED:-0}" -gt 0 ]; then
-            echo "::error::FAILED: app-attributed crash signatures"
+            echo "::error::FAILED: app-attributed crash event(s)"
             exit 1
           fi
           if [ "${CRASH_TOTAL:-0}" -gt 0 ]; then
-            echo "::warning::INCONCLUSIVE: crash signatures exist but are not attributed to app"
+            echo "::warning::INCONCLUSIVE: crash event(s) exist but are not attributed to app"
           fi
-          if [ -z "$PS_LINE" ] && [ -z "$PID" ]; then echo "::error::FAILED: no process trace"; exit 1; fi
-          if [ -n "$PS_LINE" ] && [ -n "$RAW_RESUMED" ] && [ -n "$JS_TEXTS" ]; then echo "::notice::SMOKE PASSED: native alive + foreground + positive JS evidence"; else echo "::warning::INCONCLUSIVE: partial evidence set"; fi
+          if [ -z "$PS_LINE" ] && [ -z "$PID" ]; then
+            echo "::error::FAILED: no process trace"
+            exit 1
+          fi
+          if [ -n "$PS_LINE" ] && [ -n "$RAW_RESUMED" ] && [ -n "$JS_TEXTS" ]; then
+            echo "::notice::SMOKE PASSED: native alive + foreground + positive JS evidence"
+          else
+            echo "::warning::INCONCLUSIVE: partial evidence set"
+          fi
           PROBE_EOF
           chmod +x "$PROBE_SCRIPT"
           bash -n "$PROBE_SCRIPT"
@@ -150,7 +213,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
-      - name: Smoke v3.4 на эмуляторе
+      - name: Smoke v3.5 на эмуляторе
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -176,6 +239,7 @@ jobs:
             crash-count.txt
             crash-total.txt
             crash-app-attributed.txt
+            crash-unsatisfied-link-error.txt
             crash-blocks.txt
             launch-time.txt
             inventory.txt
