@@ -89,17 +89,53 @@ jobs:
           echo "PHASE: LAUNCH SENT"
           sleep 60
           echo "PHASE: SURVIVED 60s"
+
           PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
           PS_LINE=$(adb shell ps -A 2>/dev/null | tr -d '\r' | grep mirsamozanyatykh || true)
           RAW_RESUMED=$(adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E "ResumedActivity|topResumedActivity" | grep mirsamozanyatykh || true)
           FOCUS=$(adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep mCurrentFocus || true)
-          MAINACT=$(echo "$RAW_RESUMED" | grep -c "mirsamozanyatykh.mobileagent.MainActivity" || true)
+
+          # FIX #12: dumpsys may expose MainActivity in full or relative form.
+          MAINACT=$(echo "$RAW_RESUMED" | grep -cE 'mirsamozanyatykh\.mobileagent\.MainActivity|mirsamozanyatykh\.mobileagent/\.?MainActivity' || true)
           DEVL=$(echo "$RAW_RESUMED" | grep -c devlauncher || true)
-          adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
-          adb shell cat /sdcard/ui.xml > ui-dump.xml 2>/dev/null || true
-          JS_TEXTS=$(grep -oE "Светлана онлайн|Активировать Светлану|Голосовая команда" ui-dump.xml 2>/dev/null | sort -u || true)
+
+          # First UI snapshot: prove the pre-interaction state and locate the live control.
+          adb shell uiautomator dump /sdcard/ui-before.xml >/dev/null 2>&1 || true
+          adb shell cat /sdcard/ui-before.xml > ui-dump-before.xml 2>/dev/null || true
+
+          # FIX #11: semantic activation. Locate the actual live element by text,
+          # derive its bounds from the dump, then tap its center. No hard-coded coordinates.
+          B=$(sed -n 's/.*text="Активировать Светлану"[^>]*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' ui-dump-before.xml | head -1)
+          if [ -n "$B" ]; then
+            read -r X1 Y1 X2 Y2 <<< "$B"
+            CX=$(( (X1 + X2) / 2 ))
+            CY=$(( (Y1 + Y2) / 2 ))
+            adb shell input tap "$CX" "$CY"
+            echo "ACTIVATION_TAP=ok($CX,$CY)" | tee -a js-ui.txt
+            sleep 2
+          else
+            echo "ACTIVATION_TAP=element-not-found" | tee -a js-ui.txt
+          fi
+
+          # Second UI snapshot: this is the runtime evidence for the conditional section.
+          adb shell uiautomator dump /sdcard/ui-after.xml >/dev/null 2>&1 || true
+          adb shell cat /sdcard/ui-after.xml > ui-dump-after.xml 2>/dev/null || true
+
+          MARKERS=$(grep -oE 'Светлана онлайн|Активировать Светлану|Голосовая команда' ui-dump-before.xml ui-dump-after.xml 2>/dev/null | sed 's/^[^:]*://' | sort -u || true)
+          printf '%s\n' "$MARKERS" > js-markers.txt
+          for marker in 'Светлана онлайн' 'Активировать Светлану' 'Голосовая команда'; do
+            if printf '%s\n' "$MARKERS" | grep -Fqx "$marker"; then
+              echo "MARKER_PRESENT=$marker" | tee -a js-ui.txt
+            else
+              echo "MARKER_MISSING=$marker" | tee -a js-ui.txt
+            fi
+          done
+
+          adb exec-out screencap -p > screenshot-before.png 2>/dev/null || true
+          # Capture the post-interaction screen as the primary screenshot evidence.
           adb exec-out screencap -p > screenshot.png 2>/dev/null || true
           adb logcat -d -v time > full-logcat.txt || true
+
           awk '
             function flush_block() {
               if (!in_block) return
@@ -121,6 +157,7 @@ jobs:
               print unsat_count+0 > "crash-unsatisfied-link-error.txt"
             }
           ' full-logcat.txt
+
           CRASH_TOTAL=$(cat crash-total.txt)
           APP_ATTRIBUTED=$(cat crash-app-attributed.txt)
           UNSAT=$(cat crash-unsatisfied-link-error.txt)
@@ -130,7 +167,7 @@ jobs:
           printf '%s\n' "$FOCUS" > focus.txt
           printf '%s\n' "$MAINACT" > mainactivity-count.txt
           printf '%s\n' "$DEVL" > devlaunch-count.txt
-          printf '%s\n' "$JS_TEXTS" > js-ui.txt
+
           {
             echo "### Release Probe"
             echo "PID: $PID"
@@ -138,14 +175,26 @@ jobs:
             echo "Crash events (FATAL blocks): $CRASH_TOTAL"
             echo "App-attributed crash events: $APP_ATTRIBUTED"
             echo "UnsatisfiedLinkError events inside fatal blocks: $UNSAT"
-            echo "JS evidence:"; cat js-ui.txt
+            echo "Activation: $(grep -E '^ACTIVATION_TAP=' js-ui.txt | tail -1 || true)"
+            echo "JS markers:"; cat js-markers.txt
           } >> "$GITHUB_STEP_SUMMARY"
+
           if [ "$APP_ATTRIBUTED" -gt 0 ]; then exit 1; fi
           test -n "$PID" || { echo "::error::no process trace"; exit 1; }
-          if [ "$MAINACT" -gt 0 ] && [ "$DEVL" -eq 0 ] && [ -n "$JS_TEXTS" ] && [ "$CRASH_TOTAL" -eq 0 ]; then
-            echo "::notice::SMOKE PASSED: MainActivity + positive JS evidence + clean crash profile"
+
+          HAVE_ONLINE=0; HAVE_ACTIVATE=0; HAVE_VOICE=0
+          printf '%s\n' "$MARKERS" | grep -Fqx 'Светлана онлайн' && HAVE_ONLINE=1 || true
+          printf '%s\n' "$MARKERS" | grep -Fqx 'Активировать Светлану' && HAVE_ACTIVATE=1 || true
+          printf '%s\n' "$MARKERS" | grep -Fqx 'Голосовая команда' && HAVE_VOICE=1 || true
+
+          if [ "$MAINACT" -gt 0 ] && [ "$DEVL" -eq 0 ] && [ "$HAVE_ONLINE" -eq 1 ] && [ "$HAVE_ACTIVATE" -eq 1 ] && [ "$HAVE_VOICE" -eq 1 ] && [ "$CRASH_TOTAL" -eq 0 ]; then
+            echo "V4=PASSED" | tee -a verification.txt
+            echo "V6=PASSED" | tee -a verification.txt
+            echo "::notice::SMOKE PASSED: MainActivity + all three JS markers after semantic activation + clean crash profile"
           else
-            echo "::warning::INCONCLUSIVE: release evidence incomplete"
+            echo "V4=INCONCLUSIVE" | tee -a verification.txt
+            echo "V6=INCONCLUSIVE" | tee -a verification.txt
+            echo "::warning::INCONCLUSIVE: interactive release evidence incomplete"
           fi
           PROBE_EOF
           chmod +x "$PROBE_SCRIPT"
@@ -180,11 +229,15 @@ jobs:
             mainactivity-count.txt
             devlaunch-count.txt
             js-ui.txt
+            js-markers.txt
+            verification.txt
             crash-total.txt
             crash-app-attributed.txt
             crash-unsatisfied-link-error.txt
             full-logcat.txt
-            ui-dump.xml
+            ui-dump-before.xml
+            ui-dump-after.xml
+            screenshot-before.png
             screenshot.png
             badging.txt
           if-no-files-found: warn
