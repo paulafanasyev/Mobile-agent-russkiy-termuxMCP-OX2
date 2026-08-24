@@ -90,7 +90,7 @@ jobs:
           sleep 60
           echo "PHASE: SURVIVED 60s"
           PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
-          PS_LINE=$(adb shell ps -A 2>/dev/null | tr -d '\r' | grep mirsamozyanyatykh || true)
+          PS_LINE=$(adb shell ps -A 2>/dev/null | tr -d '\r' | grep mirsamozanyatykh || true)
           RAW_RESUMED=$(adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E "ResumedActivity|topResumedActivity" | grep mirsamozanyatykh || true)
           FOCUS=$(adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep mCurrentFocus || true)
           MAINACT=$(echo "$RAW_RESUMED" | grep -c "mirsamozanyatykh.mobileagent.MainActivity" || true)
