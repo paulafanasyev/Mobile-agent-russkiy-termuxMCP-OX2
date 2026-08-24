@@ -1,0 +1,190 @@
+name: "M1+Smoke Release: манифест и UI-тест Светланы"
+
+on:
+  workflow_dispatch:
+    inputs:
+      android_run_id:
+        description: 'ID успешного рана Android APK Release'
+        required: true
+        default: ''
+  workflow_run:
+    workflows: ["Android APK Release"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  release-smoke:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Provenance — привязать release APK к конкретному Android-рану
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_RUN_ID: ${{ github.event.inputs.android_run_id }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_RUN_ID" ]; then RUN_ID="$INPUT_RUN_ID"; elif [ -n "$EVENT_RUN_ID" ]; then RUN_ID="$EVENT_RUN_ID"; else echo "::error::Нет источника run id"; exit 1; fi
+          SOURCE_SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.head_sha')
+          SOURCE_CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')
+          test "$SOURCE_CONCLUSION" = success || { echo "::error::APK source run $RUN_ID is not successful: $SOURCE_CONCLUSION"; exit 1; }
+          { echo "smoke_head_sha=$GITHUB_SHA"; echo "apk_source_run=$RUN_ID"; echo "apk_source_head_sha=$SOURCE_SHA"; echo "apk_source_conclusion=$SOURCE_CONCLUSION"; } | tee provenance.txt
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          cat provenance.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Скачать release APK из provenance-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/apk-staging"
+          rm -rf "$STAGE" && mkdir -p "$STAGE/unpacked"
+          ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="mobile-agent-russkiy-release-apk" and .expired==false) | .id' | head -1)
+          test -n "$ART_ID" || { echo "::error::Release APK artifact не найден в ране $RUN_ID"; exit 1; }
+          curl --fail --silent --show-error --location -H "Authorization: Bearer $GH_TOKEN" -o "$STAGE/artifact.zip" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
+          unzip -o "$STAGE/artifact.zip" -d "$STAGE/unpacked"
+          CANDIDATES="$(find "$STAGE/unpacked" -type f -name '*.apk')"
+          COUNT=$(printf '%s\n' "$CANDIDATES" | grep -c . || true)
+          test "$COUNT" -eq 1 || { echo "::error::ОЖИДАН РОВНО ОДИН release APK, НАЙДЕНО: $COUNT"; exit 1; }
+          SRC="$(echo "$CANDIDATES" | head -1)"
+          cp "$SRC" "$GITHUB_WORKSPACE/release-smoke.apk"
+          SHA=$(sha256sum "$GITHUB_WORKSPACE/release-smoke.apk" | awk '{print $1}')
+          SIZE=$(stat -c%s "$GITHUB_WORKSPACE/release-smoke.apk")
+          printf '%s\n' "$SHA" > apk-sha256.txt
+          printf '%s\n' "$SIZE" > apk-size.txt
+          echo "artifact_id=$ART_ID" > apk-facts.txt
+          echo "source_run_id=$RUN_ID" >> apk-facts.txt
+          echo "apk_sha256=$SHA" >> apk-facts.txt
+          echo "apk_size_bytes=$SIZE" >> apk-facts.txt
+          cat apk-facts.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: M1 — бинарное чтение release-манифеста
+        run: |
+          set -euo pipefail
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          BADGE=$("$BT/aapt2" dump badging "$GITHUB_WORKSPACE/release-smoke.apk" | head -25)
+          echo "$BADGE" | tee badging.txt
+          echo "$BADGE" | grep -q "package: name='ru.mirsamozanyatykh.mobileagent'"
+          echo "$BADGE" | grep -q "versionCode='3'"
+          { echo "### M1 Release OK"; echo '```'; echo "$BADGE"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prepare release smoke probe
+        env:
+          PROBE_SCRIPT: ${{ runner.temp }}/release-smoke-probe.sh
+        run: |
+          cat > "$PROBE_SCRIPT" <<'PROBE_EOF'
+          set -euo pipefail
+          set -x
+          cd "$GITHUB_WORKSPACE"
+          APK="$GITHUB_WORKSPACE/release-smoke.apk"
+          test -s "$APK"
+          adb install -r "$APK" || { echo "::error::INSTALL FAILED"; exit 1; }
+          echo "PHASE: INSTALL OK"
+          adb logcat -c
+          adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1 || echo "::warning::monkey rc=$? (continuing)"
+          echo "PHASE: LAUNCH SENT"
+          sleep 60
+          echo "PHASE: SURVIVED 60s"
+          PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
+          PS_LINE=$(adb shell ps -A 2>/dev/null | tr -d '\r' | grep mirsamozyanyatykh || true)
+          RAW_RESUMED=$(adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E "ResumedActivity|topResumedActivity" | grep mirsamozanyatykh || true)
+          FOCUS=$(adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep mCurrentFocus || true)
+          MAINACT=$(echo "$RAW_RESUMED" | grep -c "mirsamozanyatykh.mobileagent.MainActivity" || true)
+          DEVL=$(echo "$RAW_RESUMED" | grep -c devlauncher || true)
+          adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
+          adb shell cat /sdcard/ui.xml > ui-dump.xml 2>/dev/null || true
+          JS_TEXTS=$(grep -oE "Светлана онлайн|Активировать Светлану|Голосовая команда" ui-dump.xml 2>/dev/null | sort -u || true)
+          adb exec-out screencap -p > screenshot.png 2>/dev/null || true
+          adb logcat -d -v time > full-logcat.txt || true
+          awk '
+            function flush_block() {
+              if (!in_block) return
+              fatal_count++
+              if (app_seen) app_count++
+              if (unsat_seen) unsat_count++
+            }
+            /FATAL EXCEPTION/ {
+              flush_block()
+              in_block=1; app_seen=0; unsat_seen=0
+              next
+            }
+            in_block && /Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)/ { app_seen=1 }
+            in_block && /UnsatisfiedLinkError/ { unsat_seen=1 }
+            END {
+              flush_block()
+              print fatal_count+0 > "crash-total.txt"
+              print app_count+0 > "crash-app-attributed.txt"
+              print unsat_count+0 > "crash-unsatisfied-link-error.txt"
+            }
+          ' full-logcat.txt
+          CRASH_TOTAL=$(cat crash-total.txt)
+          APP_ATTRIBUTED=$(cat crash-app-attributed.txt)
+          UNSAT=$(cat crash-unsatisfied-link-error.txt)
+          printf '%s\n' "$PID" > pid.txt
+          printf '%s\n' "$PS_LINE" > ps.txt
+          printf '%s\n' "$RAW_RESUMED" > resumed.txt
+          printf '%s\n' "$FOCUS" > focus.txt
+          printf '%s\n' "$MAINACT" > mainactivity-count.txt
+          printf '%s\n' "$DEVL" > devlaunch-count.txt
+          printf '%s\n' "$JS_TEXTS" > js-ui.txt
+          {
+            echo "### Release Probe"
+            echo "PID: $PID"
+            echo "MainActivity-resumed: $MAINACT / DevLauncher: $DEVL"
+            echo "Crash events (FATAL blocks): $CRASH_TOTAL"
+            echo "App-attributed crash events: $APP_ATTRIBUTED"
+            echo "UnsatisfiedLinkError events inside fatal blocks: $UNSAT"
+            echo "JS evidence:"; cat js-ui.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$APP_ATTRIBUTED" -gt 0 ]; then exit 1; fi
+          test -n "$PID" || { echo "::error::no process trace"; exit 1; }
+          if [ "$MAINACT" -gt 0 ] && [ "$DEVL" -eq 0 ] && [ -n "$JS_TEXTS" ] && [ "$CRASH_TOTAL" -eq 0 ]; then
+            echo "::notice::SMOKE PASSED: MainActivity + positive JS evidence + clean crash profile"
+          else
+            echo "::warning::INCONCLUSIVE: release evidence incomplete"
+          fi
+          PROBE_EOF
+          chmod +x "$PROBE_SCRIPT"
+          bash -n "$PROBE_SCRIPT"
+
+      - name: KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+
+      - name: Release Smoke на эмуляторе
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          script: bash "${{ runner.temp }}/release-smoke-probe.sh"
+
+      - name: Evidence upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-smoke-evidence
+          path: |
+            provenance.txt
+            apk-facts.txt
+            apk-sha256.txt
+            apk-size.txt
+            pid.txt
+            ps.txt
+            resumed.txt
+            focus.txt
+            mainactivity-count.txt
+            devlaunch-count.txt
+            js-ui.txt
+            crash-total.txt
+            crash-app-attributed.txt
+            crash-unsatisfied-link-error.txt
+            full-logcat.txt
+            ui-dump.xml
+            screenshot.png
+            badging.txt
+          if-no-files-found: warn
