@@ -2,37 +2,37 @@ import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Link, Stack } from "expo-router";
 
+import { t } from "@/i18n";
+
 export default function SvetlanaScreen() {
   const [voiceOpen, setVoiceOpen] = useState(false);
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title: "Светлана" }} />
+      <Stack.Screen options={{ title: t("svetlana.title") }} />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.statusCard}>
           <View style={styles.dot} />
-          <Text style={styles.statusText}>Светлана онлайн</Text>
+          <Text style={styles.statusText}>{t("svetlana.online")}</Text>
         </View>
 
         <Pressable
           style={({ pressed }) => [styles.activate, pressed && styles.pressed]}
           onPress={() => setVoiceOpen((v) => !v)}
         >
-          <Text style={styles.activateText}>Активировать Светлану</Text>
+          <Text style={styles.activateText}>{t("svetlana.activate")}</Text>
         </Pressable>
 
         {voiceOpen && (
           <View style={styles.voiceCard}>
-            <Text style={styles.voiceTitle}>Голосовая команда</Text>
-            <Text style={styles.voiceHint}>
-              Голосовой ввод будет подключён на этапе P2. Для текстовых команд откройте чат.
-            </Text>
+            <Text style={styles.voiceTitle}>{t("svetlana.voiceCommand")}</Text>
+            <Text style={styles.voiceHint}>{t("svetlana.voiceP2Hint")}</Text>
           </View>
         )}
 
         <Link href="/chat" asChild>
           <Pressable style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}>
-            <Text style={styles.secondaryText}>Открыть чат</Text>
+            <Text style={styles.secondaryText}>{t("nav.openChat")}</Text>
           </Pressable>
         </Link>
       </ScrollView>
