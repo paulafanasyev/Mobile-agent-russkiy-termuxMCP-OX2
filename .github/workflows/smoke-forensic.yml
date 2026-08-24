@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       smoke_run_id:
-        description: "Smoke workflow run ID to inspect"
-        required: true
+        description: "Smoke workflow run ID to inspect (empty = latest completed smoke run)"
+        required: false
         default: ""
 
 permissions:
@@ -23,13 +23,18 @@ jobs:
     steps:
       - name: Resolve target smoke run
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_RUN_ID: ${{ inputs.smoke_run_id }}
           EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
           RUN_ID="${INPUT_RUN_ID:-}"
           if [ -z "$RUN_ID" ]; then RUN_ID="${EVENT_RUN_ID:-}"; fi
-          test -n "$RUN_ID" || { echo "::error::No smoke run id"; exit 1; }
+          if [ -z "$RUN_ID" ]; then
+            RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/smoke-test.yml/runs?per_page=20" --jq '.workflow_runs[] | select(.id != '"$GITHUB_RUN_ID"' and .status == "completed") | .id' | head -1)
+          fi
+          test -n "$RUN_ID" || { echo "::error::No completed smoke run found"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '{id,status,conclusion,head_sha,event,created_at}' | tee target-run.json
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
           echo "Target smoke run: $RUN_ID" >> "$GITHUB_STEP_SUMMARY"
 
@@ -39,10 +44,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence/unpacked
-          ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="smoke-evidence" and .expired==false) | .id' | head -1)
-          test -n "$ART_ID" || { echo "::error::smoke-evidence unavailable for run $RUN_ID"; gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '{id,status,conclusion,head_sha}' || true; exit 1; }
+          ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" --jq '.artifacts[] | select(.name=="smoke-evidence" and .expired==false) | .id' | head -1)
+          test -n "$ART_ID" || { echo "::error::smoke-evidence unavailable for run $RUN_ID"; exit 1; }
           echo "Artifact ID: $ART_ID"
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip" > evidence/artifact.zip
+          test -s evidence/artifact.zip
           unzip -o evidence/artifact.zip -d evidence/unpacked >/dev/null
           find evidence/unpacked -maxdepth 1 -type f -printf '%f\n' | sort
 
@@ -57,9 +63,9 @@ jobs:
             /FATAL EXCEPTION/ { flush(); in_block=1; app=0; unsat=0; next }
             in_block && /Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)/ { app=1 }
             in_block && /UnsatisfiedLinkError/ { unsat=1 }
-            END { flush(); print total+0 > "'$E'/forensic-fatal-blocks.txt"; print app_total+0 > "'$E'/forensic-app-attributed.txt"; print unsat_total+0 > "'$E'/forensic-unsatisfied-link-error.txt" }
+            END { flush(); print total+0 > "'"$E"'/forensic-fatal-blocks.txt"; print app_total+0 > "'"$E"'/forensic-app-attributed.txt"; print unsat_total+0 > "'"$E"'/forensic-unsatisfied-link-error.txt" }
           ' "$LOG"
-          awk '/FATAL EXCEPTION/ { if (in_block) printf "%s", block > "'$E'/forensic-crash-blocks.txt"; block=$0 "\n"; in_block=1; next } in_block { block=block $0 "\n" } END { if (in_block) printf "%s", block > "'$E'/forensic-crash-blocks.txt" }' "$LOG"
+          awk '/FATAL EXCEPTION/ { if (in_block) printf "%s", block > "'"$E"'/forensic-crash-blocks.txt"; block=$0 "\n"; in_block=1; next } in_block { block=block $0 "\n" } END { if (in_block) printf "%s", block > "'"$E"'/forensic-crash-blocks.txt" }' "$LOG"
           {
             echo "Smoke forensic report"
             echo "====================="
@@ -95,6 +101,7 @@ jobs:
         with:
           name: smoke-forensic-${{ env.RUN_ID }}
           path: |
+            target-run.json
             forensic-report.txt
             evidence/unpacked/forensic-*.txt
             evidence/unpacked/full-logcat.txt
