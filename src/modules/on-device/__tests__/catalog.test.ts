@@ -57,7 +57,7 @@ describe("parseOnDeviceModelCatalog", () => {
       parseOnDeviceModelCatalog(
         catalog({ ...baseModel, sha256: "a".repeat(65) }),
       ),
-    ).toThrow(/invalid SHA256/i);
+    ).toThrow(/sha256.*too long/i);
   });
 
   it("rejects a non-hex SHA256", () => {
@@ -151,7 +151,7 @@ describe("parseOnDeviceModelCatalog", () => {
   it("rejects missing required fields", () => {
     const { name: _name, ...missingName } = baseModel;
     expect(() => parseOnDeviceModelCatalog(catalog(missingName))).toThrow(
-      /name.*required/i,
+      /name.*non-empty string/i,
     );
   });
 
