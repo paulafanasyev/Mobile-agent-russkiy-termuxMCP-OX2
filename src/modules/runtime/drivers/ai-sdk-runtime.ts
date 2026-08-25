@@ -1,6 +1,9 @@
 import { generateText, streamText } from "ai";
 import { Platform } from "react-native";
 
+import {
+  createDeviceToolSet,
+} from "@/tools/bridge";
 import type {
   GenerateModelTextStreamParams,
   ProviderLanguageModel,
@@ -10,6 +13,20 @@ export function shouldUseStreamingAISDK() {
   return (
     Platform.OS === "web" || Platform.OS === "android" || Platform.OS === "ios"
   );
+}
+
+function mergeDeviceTools(
+  runtimeTools: GenerateModelTextStreamParams["tools"],
+) {
+  if (Platform.OS !== "android") {
+    return runtimeTools;
+  }
+
+  const deviceTools = createDeviceToolSet();
+  return {
+    ...deviceTools,
+    ...(runtimeTools ?? {}),
+  } as GenerateModelTextStreamParams["tools"];
 }
 
 function shouldFallbackToNonStreaming(error: unknown) {
@@ -172,12 +189,9 @@ async function generateViaAISDKWithContinuation(
         : {}),
       stopWhen: ({ steps }) => steps.length >= params.maxToolSteps,
       system: params.system,
-      tools: params.tools,
+      tools: mergeDeviceTools(params.tools),
     });
 
-    // AI SDK result getters create derived promises that can reject before the
-    // text stream reports the provider error. Attach handlers immediately so
-    // React Native does not report those secondary rejections as unhandled.
     const textPromise = Promise.resolve(result.text);
     const filesPromise = Promise.resolve(result.files);
     const responseMessagesPromise = Promise.resolve(result.responseMessages);
@@ -249,9 +263,6 @@ async function generateViaAISDKWithContinuation(
           steps.at(-1)?.finishReason === "tool-calls",
       };
     } catch (error) {
-      // AI SDK exposes several derived promises. Drain all of them after a
-      // failed stream so React Native does not report secondary unhandled
-      // NoOutputGeneratedError rejections.
       await Promise.allSettled(resultPromises);
       throw providerError ?? error;
     }
@@ -315,7 +326,7 @@ export async function generateViaAISDKNonStreaming(
     ...(params.reasoning !== undefined ? { reasoning: params.reasoning } : {}),
     stopWhen: ({ steps }) => steps.length >= params.maxToolSteps,
     system: params.system,
-    tools: params.tools,
+    tools: mergeDeviceTools(params.tools),
   });
 
   if (result.reasoningText?.trim()) {
