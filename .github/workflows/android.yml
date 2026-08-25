@@ -130,15 +130,18 @@ jobs:
           grep -R "ru.mirsamozanyatykh:libbox:1.0.0" app/build.gradle
           grep -R "build/native/maven" build.gradle settings.gradle app/build.gradle 2>/dev/null || true
           test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
-      - name: Настроить Gradle heap для большого APK
+      - name: Настроить Gradle heap для большого APK (FIX#15-v2)
         shell: bash
         run: |
           set -euo pipefail
-          cat >> android/gradle.properties <<'EOF'
+          cat >> android/gradle.properties <<'PROPS'
+
+          # FIX#15-v2 (cycle 130): packaging OOM fix
           org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
           org.gradle.workers.max=2
-          EOF
-          cat android/gradle.properties
+          PROPS
+          echo "--- gradle.properties tail after append: ---"
+          tail -5 android/gradle.properties
       - name: Собрать отладочный APK
         id: assemble
         working-directory: android
