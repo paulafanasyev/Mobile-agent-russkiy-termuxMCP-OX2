@@ -130,6 +130,15 @@ jobs:
           grep -R "ru.mirsamozanyatykh:libbox:1.0.0" app/build.gradle
           grep -R "build/native/maven" build.gradle settings.gradle app/build.gradle 2>/dev/null || true
           test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
+      - name: Настроить Gradle heap для большого APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> android/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
+          org.gradle.workers.max=2
+          EOF
+          cat android/gradle.properties
       - name: Собрать отладочный APK
         id: assemble
         working-directory: android
@@ -153,6 +162,7 @@ jobs:
             ${{ runner.temp }}/gradle-assemble-release.log
             ${{ runner.temp }}/libbox-build.log
             android/local.properties
+            android/hs_err_pid*.log
           if-no-files-found: warn
       - name: Найти APK
         id: apk
