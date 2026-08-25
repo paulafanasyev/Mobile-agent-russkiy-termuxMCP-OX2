@@ -73,6 +73,10 @@ export function isAppApprovedForSession(packageName: string): boolean {
   return sessionApproved.has(packageName);
 }
 
+export function getSessionApprovedPackages(): string[] {
+  return [...sessionApproved];
+}
+
 export function clearSessionApprovals(): void {
   sessionApproved.clear();
 }
