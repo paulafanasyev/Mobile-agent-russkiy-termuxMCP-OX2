@@ -1,4 +1,4 @@
-import { Mic, X } from "lucide-react-native";
+import { Mic } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import Svg, { Circle, Defs, LinearGradient, Path, Stop } from "react-native-svg";
