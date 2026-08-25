@@ -15,7 +15,6 @@ import { Mic, MicOff, Volume2 } from "lucide-react-native";
 
 import { SvetlanaAvatar } from "@/components/svetlana/svetlana-avatar";
 import { useChat } from "@/hooks/use-chat";
-import { t } from "@/i18n";
 
 async function requestMicrophonePermission() {
   if (Platform.OS !== "android") return true;
@@ -102,7 +101,7 @@ export default function SvetlanaScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title: t("svetlana.title") }} />
+      <Stack.Screen options={{ title: "Светлана" }} />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.hero}>
           <SvetlanaAvatar />
@@ -173,16 +172,7 @@ export default function SvetlanaScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0b0910" },
   content: { padding: 20, gap: 16, paddingBottom: 40 },
-  hero: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    backgroundColor: "#17111f",
-    borderRadius: 22,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "#35234d",
-  },
+  hero: { flexDirection: "row", alignItems: "center", gap: 16, backgroundColor: "#17111f", borderRadius: 22, padding: 18, borderWidth: 1, borderColor: "#35234d" },
   heroText: { flex: 1, gap: 5 },
   title: { color: "#fff", fontSize: 28, fontWeight: "800" },
   subtitle: { color: "#b8a8c8", fontSize: 15 },
