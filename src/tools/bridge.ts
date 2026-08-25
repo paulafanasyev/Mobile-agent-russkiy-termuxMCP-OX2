@@ -8,15 +8,13 @@
  * Flow:
  *   device contract -> AI SDK tool() -> existing runtime ToolSet -> executor
  *
- * Registry remains the contract catalogue; this adapter is the execution
- * boundary consumed by the runtime. Approval state remains in device-tools.ts.
+ * Registry remains the contract catalogue; the provider-facing schemas are the
+ * same Zod schemas stored in device-tools.ts. Approval state remains there too.
  */
 import { tool, type ToolSet } from 'ai';
-import { z } from 'zod';
 
 import {
   DEVICE_TOOLS,
-  registerDeviceTools,
   getSessionApprovedPackages,
   isAppApprovedForSession,
 } from './device-tools';
@@ -27,36 +25,32 @@ import {
   openAppSchema,
   readFileSchema,
 } from './executors/device-executors';
-import { has } from './registry';
 
-function ensureDeviceContractsRegistered(): void {
-  for (const spec of DEVICE_TOOLS) {
-    if (!has(spec.id)) {
-      registerDeviceTools();
-      return;
-    }
+function getContract(id: string) {
+  const contract = DEVICE_TOOLS.find((item) => item.id === id);
+  if (!contract) {
+    throw new Error(`Missing device tool contract: ${id}`);
   }
+  return contract;
 }
 
 /** Build the AI SDK ToolSet consumed by the existing runtime. */
 export function createDeviceToolSet(): ToolSet {
-  ensureDeviceContractsRegistered();
-
   return {
     'device.apps.list': tool({
-      description: DEVICE_TOOLS.find((item) => item.id === 'device.apps.list')!.description,
-      inputSchema: z.object({}),
+      description: getContract('device.apps.list').description,
+      inputSchema: getContract('device.apps.list').inputSchema,
       execute: async () => executeListApps(),
     }),
     'device.open_app': tool({
-      description: DEVICE_TOOLS.find((item) => item.id === 'device.open_app')!.description,
-      inputSchema: openAppSchema,
-      execute: async (args) => executeOpenApp(args),
+      description: getContract('device.open_app').description,
+      inputSchema: getContract('device.open_app').inputSchema,
+      execute: async (args) => executeOpenApp(openAppSchema.parse(args)),
     }),
     'device.files.read': tool({
-      description: DEVICE_TOOLS.find((item) => item.id === 'device.files.read')!.description,
-      inputSchema: readFileSchema,
-      execute: async (args) => executeFileRead(args),
+      description: getContract('device.files.read').description,
+      inputSchema: getContract('device.files.read').inputSchema,
+      execute: async (args) => executeFileRead(readFileSchema.parse(args)),
     }),
   };
 }
