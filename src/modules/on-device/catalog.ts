@@ -127,6 +127,11 @@ function getSupportedPlatforms(record: Record<string, unknown>) {
   return [...new Set(value)] as ("ios" | "android")[];
 }
 
+function isSupportedModelFormat(url: string) {
+  const normalized = url.toLowerCase();
+  return normalized.endsWith(".litertlm") || normalized.includes("task");
+}
+
 function parseModel(value: unknown): OnDeviceCatalogModel {
   const record = getRecord(value, "On-device catalog model");
   const id = getRequiredString(record, "id", 64);
@@ -187,13 +192,22 @@ function parseModel(value: unknown): OnDeviceCatalogModel {
     throw new Error("Invalid backend for on-device model " + id + ".");
   }
 
+  const downloadUrl = getHttpsUrl(
+    getRequiredString(record, "downloadUrl", 2048),
+  );
+  if (!isSupportedModelFormat(downloadUrl)) {
+    throw new Error(
+      `On-device catalog model ${id} uses an unsupported model format.`,
+    );
+  }
+
   return {
     backend,
     id,
     name: getRequiredString(record, "name", 100),
     parameterCount: getRequiredString(record, "parameterCount", 32),
     quantization: getRequiredString(record, "quantization", 64),
-    downloadUrl: getHttpsUrl(getRequiredString(record, "downloadUrl", 2048)),
+    downloadUrl,
     sha256: sha256.toLowerCase(),
     sizeBytes: getPositiveInteger(record, "sizeBytes", MAX_MODEL_BYTES),
     contextWindow,
