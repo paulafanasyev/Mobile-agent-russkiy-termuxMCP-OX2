@@ -7,7 +7,7 @@
  */
 import type { CapabilityLevel } from './types';
 
-declare const snapshotBrand: unique symbol;
+const snapshotBrand: unique symbol = Symbol('snapshotBrand');
 
 export type CapabilitySnapshot = {
   readonly [snapshotBrand]: true;
