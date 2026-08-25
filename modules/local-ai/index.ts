@@ -9,6 +9,8 @@ export type SvetlanaVoiceCapabilities = {
 
 export const SvetlanaVoice = requireNativeModule<{
   capabilities(): Promise<SvetlanaVoiceCapabilities>;
+  listen(): Promise<string>;
+  stopListening(): Promise<boolean>;
   speak(text: string): Promise<boolean>;
   stopSpeaking(): Promise<boolean>;
 }>('SvetlanaVoice');
