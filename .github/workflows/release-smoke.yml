@@ -99,13 +99,15 @@ jobs:
           MAINACT=$(echo "$RAW_RESUMED" | grep -cE 'mirsamozanyatykh\.mobileagent\.MainActivity|mirsamozanyatykh\.mobileagent/\.?MainActivity' || true)
           DEVL=$(echo "$RAW_RESUMED" | grep -c devlauncher || true)
 
-          # First UI snapshot: prove the pre-interaction state and locate the live control.
+          # Runtime UI snapshot. The current Svetlana screen uses the actual
+          # Russian labels below; the old probe searched for labels that no
+          # longer exist in the product and therefore produced false negatives.
           adb shell uiautomator dump /sdcard/ui-before.xml >/dev/null 2>&1 || true
           adb shell cat /sdcard/ui-before.xml > ui-dump-before.xml 2>/dev/null || true
 
-          # FIX #11: semantic activation. Locate the actual live element by text,
-          # derive its bounds from the dump, then tap its center. No hard-coded coordinates.
-          B=$(sed -n 's/.*text="Активировать Светлану"[^>]*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' ui-dump-before.xml | head -1)
+          # FIX #11: semantic activation. Locate the current live voice control
+          # by its visible Russian text instead of stale legacy wording.
+          B=$(sed -n 's/.*text="Говорить"[^>]*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' ui-dump-before.xml | head -1)
           if [ -n "$B" ]; then
             read -r X1 Y1 X2 Y2 <<< "$B"
             CX=$(( (X1 + X2) / 2 ))
@@ -117,13 +119,13 @@ jobs:
             echo "ACTIVATION_TAP=element-not-found" | tee -a js-ui.txt
           fi
 
-          # Second UI snapshot: this is the runtime evidence for the conditional section.
           adb shell uiautomator dump /sdcard/ui-after.xml >/dev/null 2>&1 || true
           adb shell cat /sdcard/ui-after.xml > ui-dump-after.xml 2>/dev/null || true
 
-          MARKERS=$(grep -oE 'Светлана онлайн|Активировать Светлану|Голосовая команда' ui-dump-before.xml ui-dump-after.xml 2>/dev/null | sed 's/^[^:]*://' | sort -u || true)
+          # Current product markers from src/app/(root)/svetlana.tsx.
+          MARKERS=$(grep -oE 'Светлана|Голосовой чат|Говорить|Слушаю…|Светлана готовит ответ…' ui-dump-before.xml ui-dump-after.xml 2>/dev/null | sed 's/^[^:]*://' | sort -u || true)
           printf '%s\n' "$MARKERS" > js-markers.txt
-          for marker in 'Светлана онлайн' 'Активировать Светлану' 'Голосовая команда'; do
+          for marker in 'Светлана' 'Голосовой чат' 'Говорить'; do
             if printf '%s\n' "$MARKERS" | grep -Fqx "$marker"; then
               echo "MARKER_PRESENT=$marker" | tee -a js-ui.txt
             else
@@ -132,7 +134,6 @@ jobs:
           done
 
           adb exec-out screencap -p > screenshot-before.png 2>/dev/null || true
-          # Capture the post-interaction screen as the primary screenshot evidence.
           adb exec-out screencap -p > screenshot.png 2>/dev/null || true
           adb logcat -d -v time > full-logcat.txt || true
 
@@ -182,19 +183,19 @@ jobs:
           if [ "$APP_ATTRIBUTED" -gt 0 ]; then exit 1; fi
           test -n "$PID" || { echo "::error::no process trace"; exit 1; }
 
-          HAVE_ONLINE=0; HAVE_ACTIVATE=0; HAVE_VOICE=0
-          printf '%s\n' "$MARKERS" | grep -Fqx 'Светлана онлайн' && HAVE_ONLINE=1 || true
-          printf '%s\n' "$MARKERS" | grep -Fqx 'Активировать Светлану' && HAVE_ACTIVATE=1 || true
-          printf '%s\n' "$MARKERS" | grep -Fqx 'Голосовая команда' && HAVE_VOICE=1 || true
+          HAVE_SVETLANA=0; HAVE_VOICE_CARD=0; HAVE_SPEAK=0
+          printf '%s\n' "$MARKERS" | grep -Fqx 'Светлана' && HAVE_SVETLANA=1 || true
+          printf '%s\n' "$MARKERS" | grep -Fqx 'Голосовой чат' && HAVE_VOICE_CARD=1 || true
+          printf '%s\n' "$MARKERS" | grep -Fqx 'Говорить' && HAVE_SPEAK=1 || true
 
-          if [ "$MAINACT" -gt 0 ] && [ "$DEVL" -eq 0 ] && [ "$HAVE_ONLINE" -eq 1 ] && [ "$HAVE_ACTIVATE" -eq 1 ] && [ "$HAVE_VOICE" -eq 1 ] && [ "$CRASH_TOTAL" -eq 0 ]; then
+          if [ "$MAINACT" -gt 0 ] && [ "$DEVL" -eq 0 ] && [ "$HAVE_SVETLANA" -eq 1 ] && [ "$HAVE_VOICE_CARD" -eq 1 ] && [ "$HAVE_SPEAK" -eq 1 ] && [ "$CRASH_TOTAL" -eq 0 ]; then
             echo "V4=PASSED" | tee -a verification.txt
             echo "V6=PASSED" | tee -a verification.txt
-            echo "::notice::SMOKE PASSED: MainActivity + all three JS markers after semantic activation + clean crash profile"
+            echo "::notice::SMOKE PASSED: MainActivity + current Svetlana UI markers + semantic voice activation + clean crash profile"
           else
             echo "V4=INCONCLUSIVE" | tee -a verification.txt
             echo "V6=INCONCLUSIVE" | tee -a verification.txt
-            echo "::warning::INCONCLUSIVE: interactive release evidence incomplete"
+            echo "::warning::INCONCLUSIVE: current Svetlana release evidence incomplete"
           fi
           PROBE_EOF
           chmod +x "$PROBE_SCRIPT"
