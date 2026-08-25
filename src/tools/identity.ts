@@ -9,7 +9,7 @@
  *    разрешены только bootstrap/auth-флоу приложения.
  */
 
-declare const identityBrand: unique symbol;
+const identityBrand: unique symbol = Symbol('identityBrand');
 export type RuntimeIdentity = {
   readonly [identityBrand]: true;
   readonly kind: SessionKind;
@@ -19,7 +19,7 @@ export type RuntimeIdentity = {
 
 export type SessionKind = 'device-owner' | 'guest';
 
-declare const contextBrand: unique symbol;
+const contextBrand: unique symbol = Symbol('contextBrand');
 export type AuthenticatedRuntimeContext = {
   readonly [contextBrand]: true;
   readonly identity: RuntimeIdentity;
