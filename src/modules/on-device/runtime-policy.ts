@@ -11,6 +11,8 @@ export type OnDeviceRuntimePolicy = {
   toolsMode: OnDeviceToolsMode;
 };
 
+// D3: runtime eligibility/context MUST use normalized expo-ai-kit registry
+// values (post-registerModel). Catalog RAM/context fields are display-only.
 function getOnDeviceOptions(model: ResolvedModel) {
   const value = model.options?.onDevice;
   return value && typeof value === "object" && !Array.isArray(value)
