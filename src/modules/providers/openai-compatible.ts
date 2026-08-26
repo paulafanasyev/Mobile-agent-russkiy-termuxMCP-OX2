@@ -1,11 +1,13 @@
 import type { SupportedProviderDefinition } from "@/modules/providers/types";
 
 const OPENAI_COMPATIBLE_PROFILES = [
+  ["anymodel", "AnyModel", "https://anymodel.org/v1"],
   ["baseten", "Baseten", "https://inference.baseten.co/v1"],
   ["cerebras", "Cerebras", "https://api.cerebras.ai/v1"],
   ["deepinfra", "DeepInfra", "https://api.deepinfra.com/v1/openai"],
   ["deepseek", "DeepSeek", "https://api.deepseek.com/v1"],
   ["fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1"],
+  ["gorouter", "GoRouter", "https://gorouter.app/v1"],
   ["groq", "Groq", "https://api.groq.com/openai/v1"],
   ["opencode", "OpenCode Zen", "https://opencode.ai/zen/v1"],
   ["togetherai", "Together AI", "https://api.together.xyz/v1"],
