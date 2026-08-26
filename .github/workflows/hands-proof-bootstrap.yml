@@ -41,8 +41,8 @@ jobs:
           test -n "$RUN_ID"
           echo "RUN_ID=$RUN_ID" | tee -a "$GITHUB_STEP_SUMMARY"
           for i in $(seq 1 90); do
-            STATUS=$(gh run view "$RUN_ID" --json status --jq '.status')
-            CONCLUSION=$(gh run view "$RUN_ID" --json conclusion --jq '.conclusion // ""')
+            STATUS=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.status')
+            CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion // ""')
             echo "build status=$STATUS conclusion=$CONCLUSION"
             if [ "$STATUS" = completed ]; then
               test "$CONCLUSION" = success
@@ -79,12 +79,11 @@ jobs:
           set -euo pipefail
           test -n "$HANDS_ID"
           for i in $(seq 1 60); do
-            STATUS=$(gh run view "$HANDS_ID" --json status --jq '.status')
-            CONCLUSION=$(gh run view "$HANDS_ID" --json conclusion --jq '.conclusion // ""')
+            STATUS=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$HANDS_ID" --jq '.status')
+            CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$HANDS_ID" --jq '.conclusion // ""')
             echo "hands status=$STATUS conclusion=$CONCLUSION"
             if [ "$STATUS" = completed ]; then
               test "$CONCLUSION" = success
-              gh run view "$HANDS_ID" --web || true
               exit 0
             fi
             sleep 30
