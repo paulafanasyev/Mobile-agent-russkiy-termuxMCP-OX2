@@ -1,0 +1,128 @@
+name: Hands Android Emulator Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      android_run_id:
+        description: "Successful Android APK Release run containing the Hands smoke route"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  hands-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Verify source run and Hands smoke route
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.android_run_id }}
+        run: |
+          set -euo pipefail
+          SOURCE_SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.head_sha')
+          CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')
+          test "$CONCLUSION" = success
+          gh api "repos/$GITHUB_REPOSITORY/contents/src/app/(root)/hands-smoke.tsx?ref=$SOURCE_SHA" \
+            --jq '.content' | base64 -d | grep -q 'PASS:DEVICE_OPEN_APP_LAUNCHED'
+          {
+            echo "source_run_id=$RUN_ID"
+            echo "source_sha=$SOURCE_SHA"
+            echo "source_conclusion=$CONCLUSION"
+          } | tee hands-provenance.txt
+
+      - name: Download release APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.android_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/apk"
+          ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+            --jq '.artifacts[] | select(.name=="mobile-agent-russkiy-release-apk" and .expired==false) | .id' | head -1)
+          test -n "$ART_ID"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -o "$RUNNER_TEMP/apk/artifact.zip" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
+          unzip -o "$RUNNER_TEMP/apk/artifact.zip" -d "$RUNNER_TEMP/apk/unpacked"
+          APK=$(find "$RUNNER_TEMP/apk/unpacked" -type f -name '*.apk' | head -1)
+          test -s "$APK"
+          cp "$APK" "$GITHUB_WORKSPACE/hands-smoke.apk"
+          sha256sum "$GITHUB_WORKSPACE/hands-smoke.apk" | tee hands-apk-sha256.txt
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run real Android Hands probe
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            adb install -r "$GITHUB_WORKSPACE/hands-smoke.apk"
+            echo "INSTALL=PASS" | tee hands-runtime.txt
+
+            adb shell am start -W \
+              -a android.intent.action.VIEW \
+              -d 'mobile-agent://hands-smoke' \
+              -p ru.mirsamozanyatykh.mobileagent
+            sleep 3
+
+            adb shell dumpsys activity activities > hands-activities-after.txt
+            adb shell dumpsys window > hands-window-after.txt
+            adb shell uiautomator dump /sdcard/hands-ui.xml >/dev/null 2>&1 || true
+            adb shell cat /sdcard/hands-ui.xml > hands-ui.xml 2>/dev/null || true
+
+            TOP=$(adb shell dumpsys activity activities | tr -d '\r' | grep -E 'mResumedActivity|topResumedActivity' | head -1 || true)
+            echo "$TOP" | tee hands-top.txt
+
+            if echo "$TOP" | grep -q 'com.android.settings'; then
+              echo 'DEVICE_OPEN_APP=PASS' | tee -a hands-runtime.txt
+            else
+              echo 'DEVICE_OPEN_APP=FAIL' | tee -a hands-runtime.txt
+              adb shell dumpsys activity activities | tail -120
+              exit 1
+            fi
+
+            adb shell pidof com.android.settings | tee hands-target-pid.txt
+            adb logcat -d -v time > hands-logcat.txt
+            grep -E 'FATAL EXCEPTION|AndroidRuntime' hands-logcat.txt > hands-fatal.txt || true
+            test ! -s hands-fatal.txt
+
+            {
+              echo '### HANDS ANDROID EVIDENCE'
+              cat hands-provenance.txt
+              cat hands-runtime.txt
+              echo 'Top activity:'
+              cat hands-top.txt
+              echo 'Target PID:'
+              cat hands-target-pid.txt
+            } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Hands evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hands-android-emulator-evidence
+          path: |
+            hands-provenance.txt
+            hands-apk-sha256.txt
+            hands-runtime.txt
+            hands-top.txt
+            hands-target-pid.txt
+            hands-activities-after.txt
+            hands-window-after.txt
+            hands-ui.xml
+            hands-logcat.txt
+            hands-fatal.txt
+          if-no-files-found: warn
