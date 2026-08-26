@@ -105,11 +105,19 @@ jobs:
               exit 1
             fi
 
-            if grep -q 'PASS:DEVICE_OPEN_APP_LAUNCHED' hands-logcat.txt; then
-              echo 'HANDS_SMOKE=PASS' | tee -a hands-runtime.txt
+            grep -q 'HANDS_SMOKE_START' hands-logcat.txt
+            grep -q 'HANDS_TOOLSET_CREATED' hands-logcat.txt
+            grep -q 'HANDS_APPROVAL_HANDLER_SET' hands-logcat.txt
+            grep -q 'HANDS_SESSION_APPROVED=true package=com.android.settings' hands-logcat.txt
+            grep -q 'HANDS_NATIVE_INTENT_REQUESTED package=com.android.settings' hands-logcat.txt
+            grep -q 'PASS:DEVICE_OPEN_APP_LAUNCHED' hands-logcat.txt
+            echo 'HANDS_RUNTIME=PASS' | tee -a hands-runtime.txt
+
+            if grep -q 'PASS:DEVICE_OPEN_APP_LAUNCHED' hands-ui.xml; then
+              echo 'HANDS_UI=PASS' | tee -a hands-runtime.txt
             else
-              echo 'HANDS_SMOKE=FAIL' | tee -a hands-runtime.txt
-              grep -E 'HANDS_|FATAL|AndroidRuntime' hands-logcat.txt || true
+              echo 'HANDS_UI=FAIL' | tee -a hands-runtime.txt
+              cat hands-ui.xml || true
               exit 1
             fi
 
