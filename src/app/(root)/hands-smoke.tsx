@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
 import { wrapToolsWithApproval } from "@/modules/runtime/tool-approval";
-import { createDeviceToolSet } from "@/tools/bridge";
+import { createDeviceToolSet, isDeviceAppApproved } from "@/tools/bridge";
 
 type SmokeStatus = "idle" | "running" | "pass" | "fail";
 
@@ -41,11 +41,15 @@ export default function HandsSmokeScreen() {
 
         log(`HANDS_OPEN_APP_RESULT status=${String(result?.status)}`);
 
+        const approved = isDeviceAppApproved("com.android.settings");
+        log(`HANDS_SESSION_APPROVED=${String(approved)} package=com.android.settings`);
+
         if (
           result?.status !== "launched" ||
-          result?.packageName !== "com.android.settings"
+          result?.packageName !== "com.android.settings" ||
+          !approved
         ) {
-          throw new Error(`Unexpected Hands result: ${JSON.stringify(result)}`);
+          throw new Error(`Unexpected Hands result/approval: ${JSON.stringify(result)}`);
         }
 
         log("HANDS_NATIVE_INTENT_REQUESTED package=com.android.settings");
