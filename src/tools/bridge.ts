@@ -1,15 +1,13 @@
 /**
  * P1-3: Device-tool bridge for the app's existing AI SDK ToolSet path.
  *
- * The current runtime does not expose a provider callback. It passes a ToolSet
- * to the AI SDK, which executes each tool's `execute` function itself.
- * Therefore this bridge intentionally does NOT invent sendMessage/onToolCall.
+ * Device tools are injected by the Android runtime after the normal ToolSet
+ * has been assembled. Mutating device actions therefore use the same runtime
+ * approval handler as ordinary tools instead of creating a second, unreachable
+ * approval path.
  *
  * Flow:
- *   device contract -> AI SDK tool() -> existing runtime ToolSet -> executor
- *
- * Registry remains the contract catalogue; the provider-facing schemas are the
- * same Zod schemas stored in device-tools.ts. Approval state remains there too.
+ *   device contract -> AI SDK tool() -> approval bridge -> executor
  */
 import { tool, type ToolSet } from 'ai';
 
@@ -17,6 +15,7 @@ import {
   DEVICE_TOOLS,
   getSessionApprovedPackages,
   isAppApprovedForSession,
+  approveAppForSession,
 } from './device-tools';
 import {
   executeFileRead,
@@ -25,6 +24,7 @@ import {
   openAppSchema,
   readFileSchema,
 } from './executors/device-executors';
+import { requestDeviceToolApproval } from '@/modules/runtime/tool-approval';
 
 function getContract(id: string) {
   const contract = DEVICE_TOOLS.find((item) => item.id === id);
@@ -45,7 +45,31 @@ export function createDeviceToolSet(): ToolSet {
     'device.open_app': tool({
       description: getContract('device.open_app').description,
       inputSchema: getContract('device.open_app').inputSchema,
-      execute: async (args) => executeOpenApp(openAppSchema.parse(args)),
+      execute: async (args) => {
+        const parsed = openAppSchema.parse(args);
+
+        if (!isAppApprovedForSession(parsed.packageName)) {
+          const decision = await requestDeviceToolApproval(
+            'device.open_app',
+            parsed,
+          );
+
+          if (decision === 'abort') {
+            throw new Error('Request aborted.');
+          }
+
+          if (decision !== 'approve') {
+            return {
+              status: 'needs_approval',
+              packageName: parsed.packageName,
+            };
+          }
+
+          approveAppForSession(parsed.packageName);
+        }
+
+        return executeOpenApp(parsed);
+      },
     }),
     'device.files.read': tool({
       description: getContract('device.files.read').description,
