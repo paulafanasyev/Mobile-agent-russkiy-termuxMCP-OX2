@@ -11,6 +11,34 @@ type ToolApprovalDecision = "approve" | "deny" | "abort";
 
 let approvalSequence = 0;
 
+type DeviceToolApprovalHandler = (
+  toolName: string,
+  toolInput: unknown,
+) => Promise<ToolApprovalDecision>;
+
+let deviceToolApprovalHandler: DeviceToolApprovalHandler | null = null;
+
+/**
+ * Device tools are injected by the AI SDK runtime after the normal runtime
+ * ToolSet has been assembled. Register the current run's approval bridge so
+ * Android actions still pass through the same UI approval path.
+ */
+export function setDeviceToolApprovalHandler(
+  handler: DeviceToolApprovalHandler | null,
+): void {
+  deviceToolApprovalHandler = handler;
+}
+
+export async function requestDeviceToolApproval(
+  toolName: string,
+  toolInput: unknown,
+): Promise<ToolApprovalDecision | null> {
+  if (!deviceToolApprovalHandler) {
+    return null;
+  }
+  return deviceToolApprovalHandler(toolName, toolInput);
+}
+
 function createApprovalId(toolName: string) {
   approvalSequence += 1;
   return `${toolName}:${Date.now()}:${approvalSequence}`;
@@ -28,6 +56,24 @@ export function wrapToolsWithApproval<T extends ToolSet>(
     ) => Promise<ToolApprovalDecision>;
   },
 ) {
+  setDeviceToolApprovalHandler(async (toolName, toolInput) => {
+    const inputSummary =
+      input.getRequestSummary?.(toolName, toolInput) ??
+      summarizeValue(toolInput);
+    const needsApproval =
+      input.shouldRequireApproval?.(toolName, toolInput) ?? true;
+
+    if (input.mode !== "ask" || !needsApproval) {
+      return "approve";
+    }
+
+    return input.requestApproval({
+      id: createApprovalId(toolName),
+      inputSummary,
+      toolName,
+    });
+  });
+
   return Object.fromEntries(
     Object.entries(tools).map(([toolName, toolDefinition]) => {
       if (!toolDefinition || typeof toolDefinition.execute !== "function") {
