@@ -16,13 +16,13 @@ vi.mock("@/tools/executors/device-executors", () => ({
   readFileSchema: { parse: (value: unknown) => value },
 }));
 
-import { approveAppForSession, clearSessionApprovedPackages } from "@/tools/device-tools";
+import { approveAppForSession, clearSessionApprovals } from "@/tools/device-tools";
 import { createDeviceToolSet } from "@/tools/bridge";
 
 describe("device.open_app approval bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearSessionApprovedPackages();
+    clearSessionApprovals();
   });
 
   it("requests runtime approval before executing an unapproved app", async () => {
