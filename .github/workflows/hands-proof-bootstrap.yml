@@ -20,25 +20,27 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          gh workflow run android.yml --ref "$BRANCH"
+          gh api --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/dispatches" \
+            -f "ref=$BRANCH" \
+            -F return_run_details=true \
+            | tee android-dispatch.json
+          test -n "$(jq -r '.workflow_run_id // empty' android-dispatch.json)"
+          echo "android_dispatch_run=$(jq -r '.workflow_run_id' android-dispatch.json)" >> "$GITHUB_OUTPUT"
 
       - name: Wait for branch APK build
         id: build
         env:
           GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ github.ref_name }}
-          SHA: ${{ github.sha }}
+          RUN_ID: ${{ steps.dispatch.outputs.android_run_id }}
         run: |
           set -euo pipefail
-          RUN_ID=""
-          for i in $(seq 1 90); do
-            RUN_ID=$(gh run list --workflow android.yml --branch "$BRANCH" --event workflow_dispatch --commit "$SHA" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
-            if [ -n "$RUN_ID" ]; then break; fi
-            sleep 20
-          done
+          if [ -z "${RUN_ID:-}" ]; then
+            RUN_ID=$(jq -r '.workflow_run_id // empty' android-dispatch.json)
+          fi
           test -n "$RUN_ID"
           echo "RUN_ID=$RUN_ID" | tee -a "$GITHUB_STEP_SUMMARY"
-
           for i in $(seq 1 90); do
             STATUS=$(gh run view "$RUN_ID" --json status --jq '.status')
             CONCLUSION=$(gh run view "$RUN_ID" --json conclusion --jq '.conclusion // ""')
@@ -46,12 +48,12 @@ jobs:
             if [ "$STATUS" = completed ]; then
               test "$CONCLUSION" = success
               echo "android_run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-              break
+              exit 0
             fi
             sleep 30
           done
-          test -n "$(gh run view "$RUN_ID" --json conclusion --jq '.conclusion // empty')"
-          test "$(gh run view "$RUN_ID" --json conclusion --jq '.conclusion')" = success
+          echo "Android APK build timeout" >&2
+          exit 1
 
       - name: Trigger real Android Hands emulator smoke
         env:
@@ -59,25 +61,24 @@ jobs:
           RUN_ID: ${{ steps.build.outputs.android_run_id }}
         run: |
           set -euo pipefail
-          gh workflow run hands-android-emulator.yml --ref main -f android_run_id="$RUN_ID"
+          gh api --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/hands-android-emulator.yml/dispatches" \
+            -f ref=main \
+            -f "inputs[android_run_id]=$RUN_ID" \
+            -F return_run_details=true \
+            | tee hands-dispatch.json
+          HANDS_ID=$(jq -r '.workflow_run_id // empty' hands-dispatch.json)
+          test -n "$HANDS_ID"
+          echo "hands_run_id=$HANDS_ID" >> "$GITHUB_OUTPUT"
 
       - name: Wait for Hands emulator evidence
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ steps.build.outputs.android_run_id }}
+          HANDS_ID: ${{ steps.hands.outputs.hands_run_id }}
         run: |
           set -euo pipefail
-          HANDS_ID=""
-          for i in $(seq 1 60); do
-            HANDS_ID=$(gh run list --workflow hands-android-emulator.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq '.[0].databaseId // empty')
-            if [ -n "$HANDS_ID" ]; then
-              INPUT_RUN=$(gh run view "$HANDS_ID" --json event --jq '.event // ""' 2>/dev/null || true)
-              break
-            fi
-            sleep 20
-          done
           test -n "$HANDS_ID"
-
           for i in $(seq 1 60); do
             STATUS=$(gh run view "$HANDS_ID" --json status --jq '.status')
             CONCLUSION=$(gh run view "$HANDS_ID" --json conclusion --jq '.conclusion // ""')
