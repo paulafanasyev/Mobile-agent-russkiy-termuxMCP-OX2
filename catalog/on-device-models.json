@@ -16,17 +16,14 @@
       "minRamSource": "https://github.com/google-ai-edge/gallery/blob/main/model_allowlists/1_0_15.json",
       "supportedPlatforms": ["ios", "android"],
       "license": "Gemma",
-      "capabilities": {
-        "tools": true,
-        "reasoning": false
-      }
+      "capabilities": {"tools": true, "reasoning": false}
     },
     {
       "id": "gemma-e4b",
       "name": "Gemma 4 E4B",
       "parameterCount": "4.5B",
       "quantization": "mixed-4/8-bit",
-      "downloadUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
+      "downloadUrl": "https://huggingface.co/litert-community/Gemma-4-E4B-it-litert-lm/resolve/main/Gemma-4-E4B-it.litertlm",
       "sha256": "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
       "sizeBytes": 3659530240,
       "contextWindow": 32000,
@@ -36,31 +33,25 @@
       "minRamSource": "https://github.com/google-ai-edge/gallery/blob/main/model_allowlists/1_0_15.json",
       "supportedPlatforms": ["ios", "android"],
       "license": "Gemma",
-      "capabilities": {
-        "tools": true,
-        "reasoning": false
-      }
+      "capabilities": {"tools": true, "reasoning": false}
     },
     {
       "id": "qwen3-0.6b",
-      "name": "Qwen3 0.6B",
+      "name": "Qwen3 0.6B — 4 GB low-memory",
       "parameterCount": "0.6B",
       "quantization": "mixed-int4",
       "downloadUrl": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/qwen3_0_6b_mixed_int4.litertlm",
       "sha256": "b1baab462f6be49d70eada79d715c2c52cd9ece0cad00bddf6a2c097d23498e9",
       "sizeBytes": 497664000,
       "contextWindow": 2048,
-      "lowMemoryContextWindow": 2048,
+      "lowMemoryContextWindow": 1024,
       "backend": "cpu",
-      "minRamBytes": 6000000000,
+      "minRamBytes": 4000000000,
       "minRamBasis": "benchmark-derived",
-      "minRamSource": "https://huggingface.co/litert-community/Qwen3-0.6B",
+      "minRamSource": "https://github.com/Leuconoe/LiteRT-LM-Unity/blob/main/docs/llm-details.md",
       "supportedPlatforms": ["ios", "android"],
       "license": "Apache-2.0",
-      "capabilities": {
-        "tools": false,
-        "reasoning": false
-      }
+      "capabilities": {"tools": false, "reasoning": false}
     },
     {
       "id": "qwen3-1.7b",
@@ -77,10 +68,7 @@
       "minRamSource": "https://huggingface.co/litert-community/Qwen3-1.7B",
       "supportedPlatforms": ["ios", "android"],
       "license": "Apache-2.0",
-      "capabilities": {
-        "tools": false,
-        "reasoning": false
-      }
+      "capabilities": {"tools": false, "reasoning": false}
     },
     {
       "id": "qwen3-4b",
@@ -97,10 +85,7 @@
       "minRamSource": "https://huggingface.co/litert-community/Qwen3-4B",
       "supportedPlatforms": ["ios", "android"],
       "license": "Apache-2.0",
-      "capabilities": {
-        "tools": false,
-        "reasoning": false
-      }
+      "capabilities": {"tools": false, "reasoning": false}
     },
     {
       "id": "phi-4-mini",
@@ -117,10 +102,7 @@
       "minRamSource": "https://github.com/google-ai-edge/gallery/blob/main/model_allowlists/1_0_9.json",
       "supportedPlatforms": ["ios", "android"],
       "license": "MIT",
-      "capabilities": {
-        "tools": false,
-        "reasoning": false
-      }
+      "capabilities": {"tools": false, "reasoning": false}
     },
     {
       "id": "qwen2.5-1.5b",
@@ -137,10 +119,7 @@
       "minRamSource": "https://github.com/google-ai-edge/gallery/blob/main/model_allowlists/1_0_15.json",
       "supportedPlatforms": ["ios", "android"],
       "license": "Apache-2.0",
-      "capabilities": {
-        "tools": false,
-        "reasoning": false
-      }
+      "capabilities": {"tools": false, "reasoning": false}
     },
     {
       "id": "deepseek-r1-1.5b",
@@ -157,30 +136,7 @@
       "minRamSource": "https://github.com/google-ai-edge/gallery/blob/main/model_allowlists/1_0_15.json",
       "supportedPlatforms": ["ios", "android"],
       "license": "MIT",
-      "capabilities": {
-        "tools": false,
-        "reasoning": true
-      }
-    },
-    {
-      "id": "deepseek-r1-7b",
-      "name": "DeepSeek R1 Distill Qwen 7B",
-      "parameterCount": "7B",
-      "quantization": "int4-block32",
-      "downloadUrl": "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-7B/resolve/main/DeepSeek-R1-Distill-Qwen-7B_q4_block32_ekv4096.litertlm",
-      "sha256": "8eb98a628709eb02e31c2880fc4d2e2b78746f289bd6ffaf373a142412a54502",
-      "sizeBytes": 4531978224,
-      "contextWindow": 4096,
-      "lowMemoryContextWindow": 2048,
-      "minRamBytes": 12000000000,
-      "minRamBasis": "analogous-model-derived",
-      "minRamSource": "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-7B",
-      "supportedPlatforms": ["ios", "android"],
-      "license": "MIT",
-      "capabilities": {
-        "tools": false,
-        "reasoning": true
-      }
+      "capabilities": {"tools": false, "reasoning": true}
     },
     {
       "id": "smollm3-3b",
@@ -197,10 +153,7 @@
       "minRamSource": "https://huggingface.co/litert-community/SmolLM3-3B",
       "supportedPlatforms": ["ios", "android"],
       "license": "Apache-2.0",
-      "capabilities": {
-        "tools": false,
-        "reasoning": false
-      }
+      "capabilities": {"tools": false, "reasoning": false}
     },
     {
       "id": "lfm2.5-1.2b",
@@ -218,10 +171,7 @@
       "minRamSource": "https://huggingface.co/litert-community/LFM2.5-1.2B-Thinking",
       "supportedPlatforms": ["ios", "android"],
       "license": "LFM Open License v1.0",
-      "capabilities": {
-        "tools": false,
-        "reasoning": true
-      }
+      "capabilities": {"tools": false, "reasoning": true}
     },
     {
       "id": "qwen3-8b",
@@ -238,10 +188,7 @@
       "minRamSource": "https://huggingface.co/litert-community/Qwen3-8B",
       "supportedPlatforms": ["ios", "android"],
       "license": "Apache-2.0",
-      "capabilities": {
-        "tools": true,
-        "reasoning": true
-      }
+      "capabilities": {"tools": true, "reasoning": true}
     },
     {
       "id": "gemma-4-12b",
@@ -258,10 +205,7 @@
       "minRamSource": "https://huggingface.co/litert-community/gemma-4-12B-it-litert-lm",
       "supportedPlatforms": ["ios", "android"],
       "license": "Gemma",
-      "capabilities": {
-        "tools": true,
-        "reasoning": false
-      }
+      "capabilities": {"tools": true, "reasoning": false}
     }
   ]
 }
