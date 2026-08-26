@@ -15,19 +15,21 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Trigger Android APK Release for this branch
+        id: dispatch
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          gh api --method POST \
-            -H 'Accept: application/vnd.github+json' \
-            "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/dispatches" \
-            -f "ref=$BRANCH" \
-            -F return_run_details=true \
+          jq -n --arg ref "$BRANCH" '{ref:$ref,return_run_details:true}' \
+            | gh api --method POST \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/dispatches" \
+              --input - \
             | tee android-dispatch.json
-          test -n "$(jq -r '.workflow_run_id // empty' android-dispatch.json)"
-          echo "android_dispatch_run=$(jq -r '.workflow_run_id' android-dispatch.json)" >> "$GITHUB_OUTPUT"
+          RUN_ID=$(jq -r '.workflow_run_id // empty' android-dispatch.json)
+          test -n "$RUN_ID"
+          echo "android_run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Wait for branch APK build
         id: build
@@ -36,9 +38,6 @@ jobs:
           RUN_ID: ${{ steps.dispatch.outputs.android_run_id }}
         run: |
           set -euo pipefail
-          if [ -z "${RUN_ID:-}" ]; then
-            RUN_ID=$(jq -r '.workflow_run_id // empty' android-dispatch.json)
-          fi
           test -n "$RUN_ID"
           echo "RUN_ID=$RUN_ID" | tee -a "$GITHUB_STEP_SUMMARY"
           for i in $(seq 1 90); do
@@ -56,17 +55,17 @@ jobs:
           exit 1
 
       - name: Trigger real Android Hands emulator smoke
+        id: hands
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ steps.build.outputs.android_run_id }}
         run: |
           set -euo pipefail
-          gh api --method POST \
-            -H 'Accept: application/vnd.github+json' \
-            "repos/$GITHUB_REPOSITORY/actions/workflows/hands-android-emulator.yml/dispatches" \
-            -f ref=main \
-            -f "inputs[android_run_id]=$RUN_ID" \
-            -F return_run_details=true \
+          jq -n --arg id "$RUN_ID" '{ref:"main",inputs:{android_run_id:$id},return_run_details:true}' \
+            | gh api --method POST \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/hands-android-emulator.yml/dispatches" \
+              --input - \
             | tee hands-dispatch.json
           HANDS_ID=$(jq -r '.workflow_run_id // empty' hands-dispatch.json)
           test -n "$HANDS_ID"
