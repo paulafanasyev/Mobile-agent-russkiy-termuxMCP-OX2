@@ -11,8 +11,6 @@ export default function HandsSmokeScreen() {
   const [evidence, setEvidence] = useState<string[]>([]);
 
   useEffect(() => {
-    if (status !== "idle") return;
-
     let cancelled = false;
     const logs: string[] = [];
     const log = (message: string) => {
@@ -43,7 +41,10 @@ export default function HandsSmokeScreen() {
 
         log(`HANDS_OPEN_APP_RESULT status=${String(result?.status)}`);
 
-        if (result?.status !== "launched" || result?.packageName !== "com.android.settings") {
+        if (
+          result?.status !== "launched" ||
+          result?.packageName !== "com.android.settings"
+        ) {
           throw new Error(`Unexpected Hands result: ${JSON.stringify(result)}`);
         }
 
@@ -68,10 +69,17 @@ export default function HandsSmokeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [status]);
+  }, []);
 
   return (
-    <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
+    <View
+      style={{
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 24,
+      }}
+    >
       <Text>OX2 Hands Smoke</Text>
       <Text>Status: {status}</Text>
       {evidence.map((line, index) => (
