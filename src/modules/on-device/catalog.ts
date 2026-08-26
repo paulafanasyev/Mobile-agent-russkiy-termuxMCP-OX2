@@ -7,7 +7,7 @@ import { fetchWithTimeout } from "@/core/fetch-with-timeout";
 import type { CuratedModelDefinition } from "@/core/types/app-state";
 
 export const ON_DEVICE_MODEL_CATALOG_URL =
-  "https://raw.githubusercontent.com/paulafanasyev/Mobile-agent-russkiy-termuxMCP-OX2/765395973286c7bf6780b9ef220933b971083248/catalog/on-device-models.json";
+  "https://raw.githubusercontent.com/paulafanasyev/Mobile-agent-russkiy-termuxMCP-OX2/main/catalog/on-device-models.json";
 
 const CATALOG_TTL_MS = 30 * 60 * 1000;
 const MAX_CATALOG_MODELS = 50;
