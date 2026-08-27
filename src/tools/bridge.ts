@@ -1,40 +1,38 @@
 /**
- * P1-3: Device-tool bridge for the app's existing AI SDK ToolSet path.
+ * Device-tool bridge for the existing AI SDK ToolSet path.
  *
- * Device tools are injected by the Android runtime after the normal ToolSet
- * has been assembled. Mutating device actions therefore use the same runtime
- * approval handler as ordinary tools instead of creating a second, unreachable
- * approval path.
- *
- * Flow:
- *   device contract -> AI SDK tool() -> approval bridge -> executor
+ * Proven Hands pattern adopted here: one atomic UI action, then observation.
+ * OpenDroid/MobileAgent-style planning remains above this layer; this bridge
+ * never invents an action or claims verification on its own.
  */
-import { tool, type ToolSet } from 'ai';
+import { tool, type ToolSet } from 'ai'
 
 import {
   DEVICE_TOOLS,
   getSessionApprovedPackages,
   isAppApprovedForSession,
   approveAppForSession,
-} from './device-tools';
+} from './device-tools'
+import { ACCESSIBILITY_TOOLS } from './accessibility-tools'
 import {
   executeFileRead,
   executeListApps,
   executeOpenApp,
   openAppSchema,
   readFileSchema,
-} from './executors/device-executors';
-import { requestDeviceToolApproval } from '@/modules/runtime/tool-approval';
+} from './executors/device-executors'
+import {
+  executeUiAction,
+  executeUiObserve,
+} from './executors/accessibility-executors'
+import { requestDeviceToolApproval } from '@/modules/runtime/tool-approval'
 
 function getContract(id: string) {
-  const contract = DEVICE_TOOLS.find((item) => item.id === id);
-  if (!contract) {
-    throw new Error(`Missing device tool contract: ${id}`);
-  }
-  return contract;
+  const contract = [...DEVICE_TOOLS, ...ACCESSIBILITY_TOOLS].find((item) => item.id === id)
+  if (!contract) throw new Error(`Missing device tool contract: ${id}`)
+  return contract
 }
 
-/** Build the AI SDK ToolSet consumed by the existing runtime. */
 export function createDeviceToolSet(): ToolSet {
   return {
     'device.apps.list': tool({
@@ -46,29 +44,14 @@ export function createDeviceToolSet(): ToolSet {
       description: getContract('device.open_app').description,
       inputSchema: getContract('device.open_app').inputSchema,
       execute: async (args) => {
-        const parsed = openAppSchema.parse(args);
-
+        const parsed = openAppSchema.parse(args)
         if (!isAppApprovedForSession(parsed.packageName)) {
-          const decision = await requestDeviceToolApproval(
-            'device.open_app',
-            parsed,
-          );
-
-          if (decision === 'abort') {
-            throw new Error('Request aborted.');
-          }
-
-          if (decision !== 'approve') {
-            return {
-              status: 'needs_approval',
-              packageName: parsed.packageName,
-            };
-          }
-
-          approveAppForSession(parsed.packageName);
+          const decision = await requestDeviceToolApproval('device.open_app', parsed)
+          if (decision === 'abort') throw new Error('Request aborted.')
+          if (decision !== 'approve') return { status: 'needs_approval', packageName: parsed.packageName }
+          approveAppForSession(parsed.packageName)
         }
-
-        return executeOpenApp(parsed);
+        return executeOpenApp(parsed)
       },
     }),
     'device.files.read': tool({
@@ -76,14 +59,28 @@ export function createDeviceToolSet(): ToolSet {
       inputSchema: getContract('device.files.read').inputSchema,
       execute: async (args) => executeFileRead(readFileSchema.parse(args)),
     }),
-  };
+    'device.ui.observe': tool({
+      description: getContract('device.ui.observe').description,
+      inputSchema: getContract('device.ui.observe').inputSchema,
+      execute: async (args) => executeUiObserve(args.maxNodes),
+    }),
+    'device.ui.act': tool({
+      description: getContract('device.ui.act').description,
+      inputSchema: getContract('device.ui.act').inputSchema,
+      execute: async (args) => {
+        const decision = await requestDeviceToolApproval('device.ui.act', args)
+        if (decision === 'abort') throw new Error('Request aborted.')
+        if (decision !== 'approve') return { status: 'needs_approval', verified: false }
+        return executeUiAction(args)
+      },
+    }),
+  }
 }
 
-/** Public inspection helpers for the UI/session approval flow. */
 export function getDeviceSessionApprovals(): string[] {
-  return getSessionApprovedPackages();
+  return getSessionApprovedPackages()
 }
 
 export function isDeviceAppApproved(packageName: string): boolean {
-  return isAppApprovedForSession(packageName);
+  return isAppApprovedForSession(packageName)
 }
