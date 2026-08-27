@@ -10,11 +10,18 @@ export function createHandsVerifier(): HandsVerifier {
   return {
     verify(action, observation) {
       const expected = action.postconditions ?? [];
-      if (expected.length === 0) return { actionId: action.id, status: 'success', observation };
+      if (expected.length === 0) {
+        return {
+          actionId: action.id,
+          status: 'failed',
+          observation,
+          error: 'Действие нельзя подтвердить: отсутствуют postconditions.',
+        };
+      }
       const haystack = observation.visibleText.map(normalize);
       const missing = expected.filter((condition) => {
         const needle = normalize(condition);
-        return needle.length > 0 && !haystack.some((text) => text.includes(needle));
+        return needle.length === 0 || !haystack.some((text) => text.includes(needle));
       });
       if (missing.length === 0) return { actionId: action.id, status: 'success', observation };
       return {
