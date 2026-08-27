@@ -1,6 +1,13 @@
 import { z } from 'zod'
 import type { ToolContractSpec } from './types'
-import { isAccessibilityEnabled } from '../../modules/accessibility-agent'
+
+// Keep the tool-contract module platform-neutral. The native Accessibility Service
+// is loaded only when the capability is actually queried, so Node/Vitest never
+// evaluates Expo/native code merely by importing the tool registry.
+const isAccessibilityEnabled = async (): Promise<boolean> => {
+  const module = await import('../../modules/accessibility-agent')
+  return module.isAccessibilityEnabled()
+}
 
 export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('tap'), x: z.number().finite(), y: z.number().finite() }),
