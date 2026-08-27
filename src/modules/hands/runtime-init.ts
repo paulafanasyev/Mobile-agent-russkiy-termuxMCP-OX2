@@ -1,21 +1,9 @@
-import {
-  executeUiAction,
-  executeUiObserve,
-  executeFindNodes,
-} from '../../tools/executors/accessibility-executors'
+import { executeUiAction, executeUiObserve, executeFindNodes } from '../../tools/executors/accessibility-executors'
 import { executeOpenApp, openAppSchema } from '../../tools/executors/device-executors'
-import {
-  executeOpenUrl, executeOpenSettings, executeHandsWait, executeHandsShare,
-  openUrlHandsSchema, openSettingsHandsSchema, waitHandsSchema, shareHandsSchema,
-} from '../../tools/executors/system-hands-executors'
-import {
-  executeSetVolume, executeSetBrightness, executeToggleFlashlight,
-  setVolumeHandsSchema, setBrightnessHandsSchema, toggleFlashlightHandsSchema,
-} from '../../tools/executors/system-device-executors'
-import {
-  executeSetAlarm, executeCreateCalendarEvent, executeCall, executeSendSms, executeSendMessage,
-  alarmHandsSchema, calendarHandsSchema, callHandsSchema, smsHandsSchema, messageHandsSchema,
-} from '../../tools/executors/telecom-calendar-hands-executors'
+import { executeOpenUrl, executeOpenSettings, executeHandsWait, executeHandsShare, openUrlHandsSchema, openSettingsHandsSchema, waitHandsSchema, shareHandsSchema } from '../../tools/executors/system-hands-executors'
+import { executeSetVolume, executeSetBrightness, executeToggleFlashlight, setVolumeHandsSchema, setBrightnessHandsSchema, toggleFlashlightHandsSchema } from '../../tools/executors/system-device-executors'
+import { executeSetAlarm, executeCreateCalendarEvent, executeCall, executeSendSms, executeSendMessage, alarmHandsSchema, calendarHandsSchema, callHandsSchema, smsHandsSchema, messageHandsSchema } from '../../tools/executors/telecom-calendar-hands-executors'
+import { executeHandsFileRead, executeHandsFileWrite, executeHandsFileMove, executeHandsFileDelete, executeHandsFileRename, fileReadHandsSchema, fileWriteHandsSchema, filePairHandsSchema, fileDeleteHandsSchema, fileRenameHandsSchema, executeHandsMedia, mediaHandsSchema } from '../../tools/executors/file-media-hands-executors'
 import { assertHandsExecutorsComplete, hasHandsExecutor, registerHandsExecutor } from './hands-executor-map'
 
 let initialized = false
@@ -26,6 +14,9 @@ function uiExecutor(type: string, defaults: Pick<UiActInput, 'waitMs' | 'verifyS
     const input = args as unknown as UiActInput
     return executeUiAction({ action: { ...(input.action as Record<string, unknown>), type }, waitMs: typeof input.waitMs === 'number' ? input.waitMs : defaults.waitMs ?? 500, expectedText: typeof input.expectedText === 'string' ? input.expectedText : undefined, expectedPackage: typeof input.expectedPackage === 'string' ? input.expectedPackage : undefined, verifyStrategy: input.verifyStrategy ?? defaults.verifyStrategy })
   }
+}
+function unavailableNativeExecutor(capability: string) {
+  return async () => ({ status: 'native_adapter_unavailable', verified: false, capability })
 }
 
 export function initHandsExecutors(): void {
@@ -45,15 +36,13 @@ export function initHandsExecutors(): void {
   register('accessibility.back', uiExecutor('back', { waitMs: 500, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.home', uiExecutor('home', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.recents', uiExecutor('recents', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
-  register('accessibility.observe', async (args) => executeUiObserve(typeof args.maxNodes === 'number' ? args.maxNodes : undefined))
   register('accessibility.read_screen', async (args) => executeUiObserve(typeof args.maxNodes === 'number' ? args.maxNodes : undefined))
-  register('accessibility.find', async (args) => executeFindNodes(args))
   register('accessibility.find_text', async (args) => executeFindNodes({ text: args.text }))
   register('accessibility.find_element', async (args) => executeFindNodes(args))
   register('android.intent.launch_app', async (args) => executeOpenApp(openAppSchema.parse(args)))
   register('android.intent.open_url', async (args) => executeOpenUrl(openUrlHandsSchema.parse(args)))
-  register('android.intent.settings', async (args) => executeOpenSettings(openSettingsHandsSchema.parse(args)))
   register('runtime.wait', async (args) => executeHandsWait(waitHandsSchema.parse(args)))
+  register('android.intent.settings', async (args) => executeOpenSettings(openSettingsHandsSchema.parse(args)))
   register('android.intent.share', async (args) => executeHandsShare(shareHandsSchema.parse(args)))
   register('android.audio.volume', async (args) => executeSetVolume(setVolumeHandsSchema.parse(args)))
   register('android.display.brightness', async (args) => executeSetBrightness(setBrightnessHandsSchema.parse(args)))
@@ -63,6 +52,19 @@ export function initHandsExecutors(): void {
   register('android.telecom.call', async (args) => executeCall(callHandsSchema.parse(args)))
   register('android.telephony.sms', async (args) => executeSendSms(smsHandsSchema.parse(args)))
   register('android.intent.message', async (args) => executeSendMessage(messageHandsSchema.parse(args)))
+  register('android.saf.read', async (args) => executeHandsFileRead(fileReadHandsSchema.parse(args)))
+  register('android.saf.write', async (args) => executeHandsFileWrite(fileWriteHandsSchema.parse(args)))
+  register('android.saf.move', async (args) => executeHandsFileMove(filePairHandsSchema.parse(args)))
+  register('android.saf.delete', async (args) => executeHandsFileDelete(fileDeleteHandsSchema.parse(args)))
+  register('android.saf.rename', async (args) => executeHandsFileRename(fileRenameHandsSchema.parse(args)))
+  register('android.media.play', async () => executeHandsMedia('play_media'))
+  register('android.media.pause', async () => executeHandsMedia('pause_media'))
+  register('android.media.next', async () => executeHandsMedia('next_media'))
+  // Explicit fail-closed adapters: these are registered so the runtime has no silent lookup gaps,
+  // but they cannot be promoted to implemented until native device evidence exists.
+  register('android.screenshot', unavailableNativeExecutor('screenshot'))
+  register('android.key', unavailableNativeExecutor('press_key'))
+  register('android.camera', unavailableNativeExecutor('camera'))
   assertHandsExecutorsComplete()
   initialized = true
 }
