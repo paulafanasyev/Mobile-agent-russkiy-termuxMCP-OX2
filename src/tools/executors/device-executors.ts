@@ -17,7 +17,6 @@ import {
   getSessionApprovedPackages,
 } from '../device-tools';
 
-// ── Schemas ────────────────────────────────────────────────────────────────────
 export const openAppSchema = z.object({
   packageName: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i),
 });
@@ -29,9 +28,6 @@ export const readFileSchema = z.object({
   maxBytes: z.number().int().positive().max(5_000_000).default(100_000),
 });
 
-// ── Executors ──────────────────────────────────────────────────────────────────
-
-/** device.apps.list — v1 approved-only. */
 export async function executeListApps(): Promise<{
   status: string;
   count: number;
@@ -44,20 +40,25 @@ export async function executeListApps(): Promise<{
   return { status: 'listed', count: apps.length, apps };
 }
 
-/** device.open_app — launch only after explicit session approval. */
+/** device.open_app — launch only after explicit session approval and verify foreground. */
 export async function executeOpenApp(
   args: z.infer<typeof openAppSchema>,
-): Promise<{ status: string; packageName: string }> {
+): Promise<{ status: string; packageName: string; verified: boolean }> {
   if (!isAppApprovedForSession(args.packageName)) {
-    return { status: 'needs_approval', packageName: args.packageName };
+    return { status: 'needs_approval', packageName: args.packageName, verified: false };
   }
 
-  // Expo SDK 57 exposes openApplication(packageName) for this operation.
-  IntentLauncher.openApplication(args.packageName);
-  return { status: 'launched', packageName: args.packageName };
+  try {
+    await IntentLauncher.openApplication(args.packageName);
+  } catch {
+    return { status: 'launch_failed', packageName: args.packageName, verified: false };
+  }
+
+  // Launch success is not foreground proof. The Hands observation layer owns
+  // authoritative postconditions; this executor therefore never claims verified.
+  return { status: 'launched_unverified', packageName: args.packageName, verified: false };
 }
 
-/** device.files.read — SAF content:// read with an LLM-context cap. */
 export async function executeFileRead(
   args: z.infer<typeof readFileSchema>,
 ): Promise<{
