@@ -1,143 +1,354 @@
-# OX2 — Agent 2: Full Hands Audit
+# OX2 — Agent 2: FULL HANDS / REAL PHONE CONTROL AUDIT
 
 **Date:** 2026-08-27  
 **Repository:** `paulafanasyev/Mobile-agent-russkiy-termuxMCP-OX2`  
-**Audit branch:** `fix/hands-audit-2026-08-27`  
+**Branch under audit:** `fix/hands-audit-2026-08-27`  
 **Role:** independent critical verification  
-**Status:** **NOT PASS / NOT RELEASE-READY**
+**Verdict:** **NOT PASS / NOT RELEASE-READY**
 
-## Executive conclusion
+## 0. Executive verdict
 
-The project has a strong universal Hands model, but the implementation is **not yet proven to provide the requested maximum real phone control**. The 40-action vocabulary is present in `src/modules/hands/action-model.ts`, but the currently exposed Android Accessibility action contract implements only seven low-level UI actions (`tap`, `long_press`, `swipe`, `type`, `back`, `home`, `recents`). Therefore the existence of the 40-action TypeScript vocabulary must not be interpreted as proof that all 40 actions are executable on a real device.
+The maximum Hands vocabulary MUST remain intact. The goal is not to reduce the system to the seven actions currently exposed by the low-level Accessibility tool. The goal is to connect the full universal Hands layer to real, permission-aware Android executors and verify every result on-device.
 
-Agent 2 must keep the release blocked until every claimed capability has a real execution path or is explicitly reported unavailable.
+At this audit point the repository proves a universal 40-capability model and a real Android Accessibility bridge, but it does NOT yet prove end-to-end real execution of all 40 capabilities. Therefore Agent 2 must keep Hands blocked from PASS.
 
-## Verified findings
+A green build, green unit tests, existence of a TypeScript union, or a native call returning without an exception is NOT proof of successful phone control.
 
-### 1. Universal Hands vocabulary exists
+## 1. Scope
 
-`src/modules/hands/action-model.ts` defines 40 capabilities, including UI gestures, text/clipboard, global navigation, observation, device controls, communications, files, camera/media and custom tools.
+Audit the complete path:
 
-**Disposition:** KEEP ALL 40. Do not reduce the vocabulary merely to match the current executor.
+`voice/user intent → planner → Hands action model → policy → approval → capability registry → executor → native Android/API → real device operation → observation → postcondition verification → audit evidence → user-visible result`.
 
-### 2. Planner was hardened
+The audit includes `src/modules/hands/`, tool contracts/registry, Accessibility implementation, native Android module, release packaging, CI smoke tests and runtime evidence.
 
-`src/modules/hands/planner.ts` now rejects empty goals, invalid action counts, disallowed policy decisions and actions without valid postconditions. It also clamps timeouts and assigns IDs/retry defaults.
+## 2. Universal 40-capability contract — KEEP ALL
 
-**Disposition:** KEEP. Add executor/capability validation before a plan is accepted for runtime execution.
+The following vocabulary is the target maximum contract and must not be reduced merely because implementation is incomplete:
 
-### 3. Verification was hardened
+1. `launch_app`
+2. `open_url`
+3. `tap`
+4. `double_tap`
+5. `long_press`
+6. `swipe`
+7. `drag`
+8. `type_text`
+9. `clear_text`
+10. `select_text`
+11. `copy`
+12. `paste`
+13. `scroll`
+14. `back`
+15. `home`
+16. `recents`
+17. `wait`
+18. `read_screen`
+19. `screenshot`
+20. `find_text`
+21. `find_element`
+22. `press_key`
+23. `set_volume`
+24. `set_brightness`
+25. `toggle_flashlight`
+26. `open_settings`
+27. `set_alarm`
+28. `create_calendar_event`
+29. `call`
+30. `send_sms`
+31. `send_message`
+32. `share`
+33. `file_read`
+34. `file_write`
+35. `file_move`
+36. `file_delete`
+37. `file_rename`
+38. `camera`
+39. `play_media`
+40. `pause_media`
+41. `next_media`
+42. `custom_tool`
 
-`src/modules/hands/verify.ts` rejects missing postconditions and contains a strict normalization boundary preventing an unverified native result from being treated as success.
+**Important:** the source currently calls this a 40-capability model while the enumerated list above contains 42 entries. Agent 2 MUST reconcile this discrepancy in code and documentation rather than silently accepting the number. The exact authoritative set must be generated from one source of truth.
 
-**Disposition:** KEEP. Runtime must actually call this verification boundary; source existence alone is insufficient.
+## 3. Current implementation findings
 
-### 4. Centralized risk policy exists
+### F1 — Universal model exists
 
-`HANDS_ACTION_POLICY` covers all 40 actions and `actionPolicy()` provides a single source for risk/approval metadata.
+`src/modules/hands/action-model.ts` contains the broad Hands vocabulary covering UI, device, communication, files, camera/media and custom tools.
 
-**Disposition:** KEEP. Approval must remain enforced for external/destructive actions.
+**Disposition:** KEEP maximum vocabulary.
 
-### 5. Real Accessibility bridge exists
+### F2 — Low-level Accessibility contract is narrower
 
-`src/tools/executors/accessibility-executors.ts` calls the native Accessibility tree and native action functions. It observes the tree before and after execution and can return `verified` or `executed_unverified`.
+`src/tools/accessibility-tools.ts` currently validates only:
+- `tap`
+- `long_press`
+- `swipe`
+- `type`
+- `back`
+- `home`
+- `recents`
 
-**Critical note:** its causal verification currently requires both requested text/package transitions when both expectations are supplied. This may be too strict for a same-package action where only text/state changes. Verification should prove the requested postcondition, not require an unrelated package transition.
+This is not acceptable as proof of the universal Hands contract. It is acceptable as a low-level executor contract, provided the upper layer has explicit adapters for the remaining capabilities.
 
-### 6. Current Accessibility action schema is only seven actions
+**Required:** expand through real adapters, not fake enum entries.
 
-`src/tools/accessibility-tools.ts` accepts only:
-- tap
-- long_press
-- swipe
-- type
-- back
-- home
-- recents
+### F3 — Real native Accessibility bridge exists
 
-This is the most important implementation gap found in this audit.
+`src/tools/executors/accessibility-executors.ts` calls native Accessibility functionality and obtains UI observations before/after execution. This is a real execution path for the supported low-level UI actions.
 
-**Disposition:** expand the real executor/tool architecture while preserving the full 40-action Hands vocabulary. Do not fake support by merely adding names to a union.
+**Required:** prove the same standard for every additional capability.
 
-### 7. Generic tool registry exists
+### F4 — Registry exists but complete capability mapping is unproven
 
-`src/tools/registry.ts` provides registration, lookup, listing and duplicate protection. The registry is suitable as a boundary for real capability adapters, but the audit has not established a complete 40-capability registration/execution map.
+`src/tools/registry.ts` supports registration, lookup, listing and duplicate prevention. A complete 1:1 capability → executor map has not been proven.
 
-**Disposition:** create an explicit capability-to-executor matrix and fail closed for missing adapters.
+**Required:** capability registry with explicit executor identity, permissions, risk, confirmation, timeout, verification and release coverage.
 
-## Required capability matrix
+### F5 — Verification hardening exists
 
-Agent 2 must verify each capability end-to-end:
+`src/modules/hands/verify.ts` rejects missing postconditions and prevents unverified native results from being reported as success.
 
-`launch_app`, `open_url`, `tap`, `double_tap`, `long_press`, `swipe`, `drag`, `type_text`, `clear_text`, `select_text`, `copy`, `paste`, `scroll`, `back`, `home`, `recents`, `wait`, `read_screen`, `screenshot`, `find_text`, `find_element`, `press_key`, `set_volume`, `set_brightness`, `toggle_flashlight`, `open_settings`, `set_alarm`, `create_calendar_event`, `call`, `send_sms`, `send_message`, `share`, `file_read`, `file_write`, `file_move`, `file_delete`, `file_rename`, `camera`, `play_media`, `pause_media`, `next_media`, `custom_tool`.
+**Required:** prove runtime always reaches this boundary.
 
-For every item record:
+### F6 — Planner hardening exists
 
-1. planner representation;
-2. policy/risk;
-3. approval requirement;
-4. registered executor;
-5. native Android/API call;
-6. permission requirements;
-7. actual device-side operation;
-8. observation after execution;
-9. postcondition verification;
-10. failure behavior;
-11. retry/replan behavior;
-12. release APK coverage.
+`src/modules/hands/planner.ts` validates goals/action counts/policy and rejects unverifiable actions.
 
-A capability is **PASS only when the complete chain is demonstrated**.
+**Required:** plan acceptance must also validate that each action has an actually registered executor.
 
-## Security/behavior requirements
+### F7 — Risk/approval centralization exists
 
-- Never convert `executed_unverified` into `success`.
-- Never report success solely because an Android API call returned without throwing.
-- Destructive/external operations require explicit confirmation according to policy.
-- Missing native executor must produce `unavailable`/unsupported behavior, not synthetic success.
-- UI actions should prefer semantic Accessibility targets (`text`, `contentDescription`, `resourceId`, package) over blind coordinates when a semantic target is available.
-- Coordinates must be validated against current screen bounds before execution.
-- Re-observe after retries; do not repeat a stale coordinate action blindly.
-- Communications, file deletion, external sharing and similar actions require strong postconditions and audit evidence.
-- `custom_tool` must never become an unrestricted escape hatch around policy.
+The action policy is centralized across the universal action set.
 
-## Build findings
+**Required:** no executor or custom tool may bypass it.
 
-The previously reported Android resource error was valid: `android:description` must use a string resource. The branch contains the resource-reference form and a corresponding string resource.
+### F8 — Accessibility verification can be too strict
 
-The latest reported Gradle failure is a Kotlin compilation failure in `:expo:compileDebugKotlin`, but the visible excerpt contains mostly warnings and does not include the actual compiler diagnostic. Therefore Agent 2 must **not** claim that the warnings are the root cause. A fresh build log must capture the first actual Kotlin `e:` diagnostic.
+If both expected text and expected package are supplied, verification must prove the requested state transition without demanding an unrelated package transition. Same-package actions are legitimate. Verification must be postcondition-oriented.
 
-## Release verification gate
+### F9 — CI release artifact selection needed correction
 
-Do not mark PASS from a green CI job alone.
+The smoke pipeline must inspect the release APK, not a debug artifact. Artifact identity and SHA-256 must be captured in evidence.
 
-Required evidence:
+### F10 — Android resource issue
 
-- exact commit SHA;
-- exact release APK artifact;
+The Accessibility Service description must use a string resource reference. The corrected form and resource must be present in the audited branch.
+
+### F11 — Latest Kotlin failure is not diagnosed by warnings
+
+The reported `:expo:compileDebugKotlin` failure excerpt contains many warnings but no first compiler `e:` diagnostic. Agent 2 must not call those warnings the cause. A fresh build must capture the first actual error.
+
+## 4. Mandatory 42-row capability matrix
+
+The repository must maintain a generated/checked matrix with these columns:
+
+`capability | model | policy | approval | executor | native/api | permission | device operation | before observation | after observation | postcondition | failure | retry/replan | release APK | evidence | verdict`
+
+Initial status:
+
+| # | Capability | Current audit verdict |
+|---:|---|---|
+| 1 | launch_app | INCONCLUSIVE — end-to-end proof required |
+| 2 | open_url | INCONCLUSIVE — end-to-end proof required |
+| 3 | tap | PARTIAL — real Accessibility path exists; device/release evidence required |
+| 4 | double_tap | INCONCLUSIVE |
+| 5 | long_press | PARTIAL — real low-level path exists; device/release evidence required |
+| 6 | swipe | PARTIAL — real low-level path exists; device/release evidence required |
+| 7 | drag | INCONCLUSIVE |
+| 8 | type_text | PARTIAL — real low-level path exists; semantic target/release evidence required |
+| 9 | clear_text | INCONCLUSIVE |
+| 10 | select_text | INCONCLUSIVE |
+| 11 | copy | INCONCLUSIVE |
+| 12 | paste | INCONCLUSIVE |
+| 13 | scroll | INCONCLUSIVE |
+| 14 | back | PARTIAL — real low-level path exists; device/release evidence required |
+| 15 | home | PARTIAL — real low-level path exists; device/release evidence required |
+| 16 | recents | PARTIAL — real low-level path exists; device/release evidence required |
+| 17 | wait | INCONCLUSIVE |
+| 18 | read_screen | PARTIAL — Accessibility observation path exists; full Hands integration required |
+| 19 | screenshot | INCONCLUSIVE |
+| 20 | find_text | PARTIAL/INCONCLUSIVE — tree data exists; Hands-level executor proof required |
+| 21 | find_element | PARTIAL/INCONCLUSIVE — tree data exists; Hands-level executor proof required |
+| 22 | press_key | INCONCLUSIVE |
+| 23 | set_volume | INCONCLUSIVE |
+| 24 | set_brightness | INCONCLUSIVE |
+| 25 | toggle_flashlight | INCONCLUSIVE |
+| 26 | open_settings | INCONCLUSIVE |
+| 27 | set_alarm | INCONCLUSIVE |
+| 28 | create_calendar_event | INCONCLUSIVE |
+| 29 | call | INCONCLUSIVE — approval and real telecom intent evidence required |
+| 30 | send_sms | INCONCLUSIVE — approval and real SMS evidence required |
+| 31 | send_message | INCONCLUSIVE — app-specific adapter/evidence required |
+| 32 | share | INCONCLUSIVE — target/app/result verification required |
+| 33 | file_read | INCONCLUSIVE |
+| 34 | file_write | INCONCLUSIVE |
+| 35 | file_move | INCONCLUSIVE |
+| 36 | file_delete | INCONCLUSIVE — destructive action requires strong confirmation/postcondition |
+| 37 | file_rename | INCONCLUSIVE |
+| 38 | camera | INCONCLUSIVE |
+| 39 | play_media | INCONCLUSIVE |
+| 40 | pause_media | INCONCLUSIVE |
+| 41 | next_media | INCONCLUSIVE |
+| 42 | custom_tool | INCONCLUSIVE — must be registered, permissioned and policy-bound |
+
+**No row may be promoted to PASS from source inspection alone.**
+
+## 5. Required implementation architecture
+
+### 5.1 One authoritative capability definition
+
+Remove duplicate action vocabularies or make one generated from the other. The number must be mechanically derived; no stale "40" constant may disagree with the actual entries.
+
+### 5.2 Capability registry
+
+Every capability must resolve to a concrete adapter with:
+
+- executor ID;
+- input schema;
+- permission requirements;
+- risk level;
+- confirmation requirement;
+- timeout;
+- retry policy;
+- postcondition strategy;
+- audit event type;
+- release-test ID.
+
+Missing adapter = `unsupported/unavailable`, never success.
+
+### 5.3 Semantic UI targeting
+
+If an Accessibility target is available, prefer:
+
+`resourceId → contentDescription → exact/normalized text → package + class → bounds`
+
+over blind coordinates.
+
+Coordinates remain supported for maximum flexibility but must be bounds-checked against the current observed display and revalidated after a state change.
+
+### 5.4 Real observation loop
+
+For UI actions:
+
+`observe → resolve target → execute → wait → observe → verify`
+
+Retry must re-observe and resolve; it must never blindly replay stale coordinates.
+
+### 5.5 Dangerous/external actions
+
+Calls, SMS, messages, sharing, deletion and other external/destructive actions require confirmation according to policy and a strong postcondition.
+
+### 5.6 Custom tools
+
+`custom_tool` is not an unrestricted escape hatch. It must resolve through the same registry, policy, permission, confirmation, timeout and verification boundaries.
+
+## 6. False-success gates
+
+The following are mandatory failures:
+
+- native API returns without exception but requested state did not occur;
+- no postcondition exists;
+- executor missing;
+- accessibility disabled for an accessibility-dependent action;
+- target no longer exists;
+- coordinates outside current bounds;
+- verification unavailable;
+- observation contradicts expected result;
+- runtime returns `executed_unverified` as user-visible success;
+- custom tool bypasses policy.
+
+## 7. Android/service gates
+
+Verify:
+
+1. Accessibility service declared correctly;
+2. `android:description` references a resource;
+3. string resource exists;
+4. service starts;
+5. service can obtain active window/root;
+6. UI tree is non-empty where expected;
+7. gestures execute;
+8. global actions execute;
+9. permissions are handled explicitly;
+10. service failure is surfaced, not hidden.
+
+## 8. Voice/Svetlana integration gate
+
+The final system must prove:
+
+`spoken command → speech recognition → agent intent → Hands plan → approval if needed → real executor → phone state change → observation → verification → spoken/user-visible confirmation`.
+
+A chat response claiming that an action happened is not evidence that it happened.
+
+## 9. Release gate
+
+Agent 2 must receive evidence from the exact release artifact:
+
+- commit SHA;
+- workflow run URL;
+- release APK artifact name;
 - APK SHA-256;
-- manifest/package verification;
-- installation evidence;
-- Accessibility Service enabled evidence;
-- runtime UI dump;
-- real Hands action evidence;
-- before/after observations;
+- package name/version;
+- install success;
+- app launch;
+- Accessibility enabled;
+- process/focus evidence;
+- UI dump;
+- before/after screenshots or UI observations;
+- real action evidence;
 - postcondition evidence;
 - crash count;
-- process/focus evidence;
-- release artifact, not debug artifact;
-- complete 40-capability matrix with PASS/FAIL/INCONCLUSIVE.
+- no placeholder executor;
+- capability matrix.
 
-## Current verdict
+## 10. Build gate
+
+The build is not PASS until:
+
+- the first actual Kotlin compiler diagnostic is captured;
+- all project-owned compile errors are fixed;
+- warnings are separated from errors;
+- release build succeeds;
+- release artifact is the artifact under runtime testing.
+
+## 11. Required negative tests
+
+At minimum:
+
+- no Accessibility permission;
+- unsupported capability;
+- missing executor;
+- invalid target;
+- stale target;
+- out-of-bounds coordinates;
+- failed postcondition;
+- timeout;
+- retry after changed screen;
+- denied confirmation;
+- custom tool attempting policy bypass;
+- native exception;
+- app crash during action;
+- wrong package/state after action.
+
+Expected result in all cases: honest failure/unavailable state, never synthetic success.
+
+## 12. Current Agent 2 decision
 
 **HANDS STAGE: NOT ACCEPTED.**
 
-The architecture is moving in the correct direction, and the maximum vocabulary is intentionally preserved. However, the implementation must still close the gap between the 40 universal capabilities and the actual Android execution layer. Until that gap is closed and demonstrated on the release artifact, any statement that the Hands can "do everything" would be unverified.
+This is not a rejection of the maximum Hands design. The maximum design is explicitly retained. It is a rejection of claiming completion before the 40/42 capability discrepancy is resolved and every capability has a demonstrated real execution path.
 
-## Work already made on this audit branch
+## 13. Work already performed on audit branch
 
-- Hardened Hands planner against unverifiable actions.
-- Hardened verification against false success.
-- Centralized action policy metadata.
-- Corrected release smoke artifact selection toward the release APK.
-- Corrected Android accessibility service description to a string resource.
-- Added this independent Agent 2 audit report.
+- Hands planner hardening.
+- Verification false-success hardening.
+- Centralized policy metadata.
+- Release smoke artifact correction.
+- Android Accessibility description resource correction.
+- Expanded Agent 2 audit documentation.
+
+## 14. Next mandatory engineering action
+
+Build the authoritative capability registry and complete the capability-to-executor matrix. Then implement real adapters for missing capabilities, run compile/unit/integration checks, build the release APK, install it, enable Accessibility, execute representative and destructive Hands scenarios on-device, capture evidence, and only then request Agent 2 re-verification.
