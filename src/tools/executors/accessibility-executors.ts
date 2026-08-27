@@ -5,7 +5,7 @@ import { actionSchema, findQuerySchema, type AccessibilityAction } from '../acce
 type AccessibilityExecutionResult = { status: string; action: string }
 async function getAccessibilityTree(maxNodes = HANDS_MAX_TREE_NODES): Promise<AccessibilityNode[]> { return nativeGetAccessibilityTree(Math.max(1, Math.min(maxNodes, HANDS_MAX_TREE_NODES))) }
 async function performAccessibilityAction(action: AccessibilityAction): Promise<AccessibilityExecutionResult> { return nativePerformAccessibilityAction(action) }
-export async function executeUiObserve(maxNodes: number) { const enabled=await isAccessibilityEnabled(); if(!enabled)return {status:'accessibility_disabled',nodes:[] as AccessibilityNode[]}; return {status:'observed',nodes:await getAccessibilityTree(maxNodes)} }
+export async function executeUiObserve(maxNodes?: number) { const enabled=await isAccessibilityEnabled(); if(!enabled)return {status:'accessibility_disabled',nodes:[] as AccessibilityNode[]}; return {status:'observed',nodes:await getAccessibilityTree(maxNodes)} }
 function rootPackage(nodes: AccessibilityNode[]): string|null{return nodes.find(n=>n.id==='0')?.packageName??nodes[0]?.packageName??null}
 function stableNode(n: AccessibilityNode){return [n.id,n.text??'',n.contentDescription??'',n.resourceId??'',n.packageName??'',n.bounds.left,n.bounds.top,n.bounds.right,n.bounds.bottom,n.clickable,n.editable,n.enabled].join('\u001f')}
 export function computeFingerprint(nodes: AccessibilityNode[]): string { let hash=2166136261; for(const s of nodes.map(stableNode)){for(let i=0;i<s.length;i++){hash^=s.charCodeAt(i);hash=Math.imul(hash,16777619)}} return (hash>>>0).toString(16).padStart(8,'0') }
