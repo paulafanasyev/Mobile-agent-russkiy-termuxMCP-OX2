@@ -86,10 +86,12 @@ class OX2AccessibilityService : AccessibilityService() {
     val node = findNode(action["nodeId"] as? String) ?: rootInActiveWindow
       ?: return "target_not_found"
     return try {
-      if (!node.isEditable || !node.isEnabled) return "target_not_editable"
-      val args = Bundle()
-      args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-      if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) "executed" else "failed"
+      if (!node.isEditable || !node.isEnabled) "target_not_editable"
+      else {
+        val args = Bundle()
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) "executed" else "failed"
+      }
     } finally {
       node.recycle()
     }
@@ -100,25 +102,20 @@ class OX2AccessibilityService : AccessibilityService() {
     val root = rootInActiveWindow ?: return null
     val parts = id.split('.')
     var current: AccessibilityNodeInfo = root
+    var transferred = false
     try {
       for (part in parts.drop(1)) {
         val index = part.toIntOrNull() ?: return null
         if (index < 0 || index >= current.childCount) return null
         val next = current.getChild(index) ?: return null
         if (current !== root) current.recycle()
+        else root.recycle()
         current = next
       }
+      transferred = true
       return current
-    } catch (_: RuntimeException) {
-      if (current !== root) current.recycle()
-      return null
     } finally {
-      if (current === root && parts.size == 1) {
-        // Ownership of root is transferred to the caller only for the exact root id.
-      }
-      if (current !== root && current !== null) {
-        // Child ownership is transferred to the caller.
-      }
+      if (!transferred) current.recycle()
     }
   }
 
