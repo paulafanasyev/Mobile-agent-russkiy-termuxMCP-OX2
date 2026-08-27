@@ -24,7 +24,7 @@ class OX2AccessibilityService : AccessibilityService() {
   }
 
   fun snapshot(maxNodes: Int): List<Map<String, Any?>> {
-    val limit = maxNodes.coerceIn(1, 200)
+    val limit = maxNodes.coerceIn(1, MAX_TREE_NODES)
     val root = rootInActiveWindow ?: return emptyList()
     return try {
       val out = ArrayList<Map<String, Any?>>(limit)
@@ -83,8 +83,8 @@ class OX2AccessibilityService : AccessibilityService() {
   private fun typeText(action: Map<String, Any?>): String {
     val text = action["text"] as? String ?: return "invalid_action"
     if (text.length > MAX_TEXT_LENGTH) return "text_too_long"
-    val node = findNode(action["nodeId"] as? String) ?: rootInActiveWindow
-      ?: return "target_not_found"
+    val nodeId = action["nodeId"] as? String ?: return "invalid_node_target"
+    val node = findNode(nodeId) ?: return "invalid_node_target"
     return try {
       if (!node.isEditable || !node.isEnabled) "target_not_editable"
       else {
@@ -97,8 +97,8 @@ class OX2AccessibilityService : AccessibilityService() {
     }
   }
 
-  private fun findNode(id: String?): AccessibilityNodeInfo? {
-    if (id.isNullOrBlank() || !NODE_ID.matches(id)) return null
+  private fun findNode(id: String): AccessibilityNodeInfo? {
+    if (!NODE_ID.matches(id)) return null
     val root = rootInActiveWindow ?: return null
     val parts = id.split('.')
     var current: AccessibilityNodeInfo = root
@@ -108,8 +108,7 @@ class OX2AccessibilityService : AccessibilityService() {
         val index = part.toIntOrNull() ?: return null
         if (index < 0 || index >= current.childCount) return null
         val next = current.getChild(index) ?: return null
-        if (current !== root) current.recycle()
-        else root.recycle()
+        current.recycle()
         current = next
       }
       transferred = true
@@ -147,6 +146,7 @@ class OX2AccessibilityService : AccessibilityService() {
     x >= 0f && y >= 0f && x < width && y < height
 
   companion object {
+    private const val MAX_TREE_NODES = 200
     private const val MAX_TEXT_LENGTH = 4096
     private val NODE_ID = Regex("^0(?:\\.[0-9]+)*$")
 
