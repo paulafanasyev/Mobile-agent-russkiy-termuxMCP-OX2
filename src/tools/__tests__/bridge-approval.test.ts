@@ -5,8 +5,13 @@ const mocks = vi.hoisted(() => ({
   executeOpenApp: vi.fn(),
 }));
 
+// Pure bridge test: do not load Android/Expo native modules into Node/Vitest.
 vi.mock("@/modules/runtime/tool-approval", () => ({
   requestDeviceToolApproval: mocks.requestDeviceToolApproval,
+}));
+
+vi.mock("@/modules/accessibility-agent", () => ({
+  isAccessibilityEnabled: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("@/tools/executors/device-executors", () => ({
