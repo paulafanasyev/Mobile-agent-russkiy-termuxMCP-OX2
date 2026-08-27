@@ -1,12 +1,9 @@
-/** Hands executors for filesystem and media controls.
- *
- * Important: these functions report `executed_unverified` unless a concrete
- * postcondition is observable. An API call resolving is never treated as proof.
- */
+/** Hands executors for filesystem, screenshot and media controls. */
 import * as FileSystem from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { Platform } from 'react-native';
 import { z } from 'zod';
+import { nativeScreenshot } from '../../..//modules/accessibility-agent/native';
 
 const fileUri = z.string().refine((v) => v.startsWith('file://') || v.startsWith('content://'), 'Expected file:// or content:// URI');
 export const fileReadHandsSchema = z.object({ uri: fileUri, maxBytes: z.number().int().positive().max(5_000_000).default(100_000) });
@@ -56,11 +53,16 @@ export async function executeHandsFileDelete(args: z.infer<typeof fileDeleteHand
     await FileSystem.deleteAsync(args.uri, { idempotent: false });
     const info = await FileSystem.getInfoAsync(args.uri);
     return { status: !info.exists ? 'delete_verified' : 'delete_unverified', verified: !info.exists, uri: args.uri };
-  } catch { return { status: 'delete_failed', verified: false, uri: args.uri }; }
+  } catch { return { status: 'delete_failed', verified: false, uri: args.uri };
+  }
 }
 
 export async function executeHandsFileRename(args: z.infer<typeof fileRenameHandsSchema>) {
   return executeHandsFileMove({ sourceUri: args.uri, destinationUri: args.newUri });
+}
+
+export async function executeHandsScreenshot() {
+  return nativeScreenshot();
 }
 
 const mediaActions = {
