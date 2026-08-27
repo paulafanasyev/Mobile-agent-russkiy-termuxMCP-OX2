@@ -1,0 +1,14 @@
+apply plugin: 'com.android.library'
+
+android {
+  namespace 'expo.modules.accessibilityagent'
+  compileSdkVersion 36
+
+  defaultConfig {
+    minSdkVersion 26
+  }
+}
+
+dependencies {
+  implementation project(':expo-modules-core')
+}
