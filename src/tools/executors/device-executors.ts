@@ -11,6 +11,8 @@
  */
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
+import { requireNativeModule } from 'expo';
 import { z } from 'zod';
 import {
   isAppApprovedForSession,
@@ -28,6 +30,14 @@ export const readFileSchema = z.object({
   maxBytes: z.number().int().positive().max(5_000_000).default(100_000),
 });
 
+type NativeAccessibilityAgent = {
+  getTree(maxNodes: number): Promise<Array<{ id: string; packageName: string | null }>>;
+};
+
+const Native = Platform.OS === 'android'
+  ? requireNativeModule<NativeAccessibilityAgent>('AccessibilityAgent')
+  : null;
+
 export async function executeListApps(): Promise<{
   status: string;
   count: number;
@@ -40,7 +50,27 @@ export async function executeListApps(): Promise<{
   return { status: 'listed', count: apps.length, apps };
 }
 
-/** device.open_app — launch only after explicit session approval and verify foreground. */
+async function getForegroundPackage(): Promise<string | null> {
+  if (!Native) return null;
+  try {
+    const nodes = await Native.getTree(1);
+    return nodes.find((node) => node.id === '0')?.packageName ?? nodes[0]?.packageName ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForForegroundPackage(packageName: string, timeoutMs = 2000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (await getForegroundPackage() === packageName) return true;
+    if (Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  } while (true);
+  return false;
+}
+
+/** device.open_app — launch only after explicit session approval and verify foreground transition. */
 export async function executeOpenApp(
   args: z.infer<typeof openAppSchema>,
 ): Promise<{ status: string; packageName: string; verified: boolean }> {
@@ -48,15 +78,23 @@ export async function executeOpenApp(
     return { status: 'needs_approval', packageName: args.packageName, verified: false };
   }
 
+  const beforePackage = await getForegroundPackage();
+
   try {
     await IntentLauncher.openApplication(args.packageName);
   } catch {
     return { status: 'launch_failed', packageName: args.packageName, verified: false };
   }
 
-  // Launch success is not foreground proof. The Hands observation layer owns
-  // authoritative postconditions; this executor therefore never claims verified.
-  return { status: 'launched_unverified', packageName: args.packageName, verified: false };
+  // Verification requires an actual foreground transition, not merely a resolved launch Promise.
+  const transitioned = beforePackage !== args.packageName;
+  const verified = transitioned && await waitForForegroundPackage(args.packageName);
+
+  return {
+    status: verified ? 'launched_verified' : 'launched_unverified',
+    packageName: args.packageName,
+    verified,
+  };
 }
 
 export async function executeFileRead(
