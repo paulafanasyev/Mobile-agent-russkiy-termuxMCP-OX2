@@ -5,5 +5,4 @@
     android:canRetrieveWindowContent="true"
     android:description="Позволяет Светлане выполнять разрешённые действия на экране телефона."
     android:notificationTimeout="100"
-    android:canPerformGestures="true"
-    android:settingsActivity="ru.mirsamozanyatykh.mobileagent.SettingsActivity" />
+    android:canPerformGestures="true" />
