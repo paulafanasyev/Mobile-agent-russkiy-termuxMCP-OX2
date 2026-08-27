@@ -38,17 +38,18 @@ export default function HandsSmokeScreen() {
           throw new Error("Accessibility Hands tools are not executable");
         }
 
-        // The native service must provide a real UI tree. No mock/fallback is accepted.
         const observed = await observe.execute(
           { maxNodes: 200 },
           { toolCallId: "hands-observe", messages: [], context: {} },
         );
         log(`HANDS_UI_OBSERVE_RESULT status=${String(observed?.status)} nodes=${String(observed?.nodes?.length ?? 0)}`);
-        if (observed?.status !== "observed" || !observed.nodes?.some((n: any) => n.text === "HANDS_REAL_ACTION_TARGET" && n.clickable)) {
+        const isTarget = (n: any) =>
+          n.clickable && (n.text === "HANDS_REAL_ACTION_TARGET" || n.contentDescription === "HANDS_REAL_ACTION_TARGET");
+        if (observed?.status !== "observed" || !observed.nodes?.some(isTarget)) {
           throw new Error("Real accessibility UI target was not observed");
         }
 
-        const target = observed.nodes.find((n: any) => n.text === "HANDS_REAL_ACTION_TARGET" && n.clickable);
+        const target = observed.nodes.find(isTarget);
         if (!target) throw new Error("Clickable Hands target missing");
         const bounds = target.bounds;
         const x = (bounds.left + bounds.right) / 2;
