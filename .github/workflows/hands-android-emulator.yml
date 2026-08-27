@@ -77,6 +77,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
+            bash -s <<'BASH'
             set -euo pipefail
             adb install -r "$GITHUB_WORKSPACE/hands-smoke.apk"
             echo "INSTALL=PASS" | tee hands-runtime.txt
@@ -134,6 +135,7 @@ jobs:
               echo 'Target PID:'
               cat hands-target-pid.txt
             } >> "$GITHUB_STEP_SUMMARY"
+            BASH
 
       - name: Upload Hands evidence
         if: always()
