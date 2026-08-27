@@ -18,10 +18,16 @@ export async function executeUiObserve(maxNodes: number) {
 }
 
 function treeMatches(nodes: AccessibilityNode[], expectedText?: string, expectedPackage?: string): boolean {
+  if (nodes.length === 0) return false
+
+  // root node (id=0) originates from rootInActiveWindow, so its package is
+  // the active accessibility window rather than an arbitrary descendant.
+  if (expectedPackage && nodes[0]?.packageName !== expectedPackage) return false
+  if (!expectedText) return Boolean(expectedPackage)
+
   return nodes.some((node) => {
     const text = `${node.text ?? ''} ${node.contentDescription ?? ''}`
-    return (!expectedText || text.includes(expectedText)) &&
-      (!expectedPackage || node.packageName === expectedPackage)
+    return text.includes(expectedText)
   })
 }
 
@@ -37,14 +43,14 @@ export async function executeUiAction(input: {
     return { status: 'accessibility_disabled', action: action.type, verified: false }
   }
 
-  const before = await getAccessibilityTree(250)
+  const before = await getAccessibilityTree(200)
   const result = await performAccessibilityAction(action)
   if (result.status !== 'executed') {
     return { ...result, verified: false, before, after: before }
   }
 
   await new Promise((resolve) => setTimeout(resolve, input.waitMs))
-  const after = await getAccessibilityTree(250)
+  const after = await getAccessibilityTree(200)
   const hasExpectation = Boolean(input.expectedText || input.expectedPackage)
   const verified = hasExpectation
     ? treeMatches(after, input.expectedText, input.expectedPackage)
