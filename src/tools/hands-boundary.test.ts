@@ -20,8 +20,8 @@ describe('Hands native boundary', () => {
   it('requires approval before device.ui.observe execution', () => {
     const bridge = source('src/tools/bridge.ts')
     const toolStart = bridge.indexOf("'device.ui.observe': tool({")
-    const executeStart = bridge.indexOf('executeUiObserve(args.maxNodes)', toolStart)
-    const approvalStart = bridge.indexOf("requestDeviceToolApproval('device.ui.observe'", toolStart)
+    const executeStart = bridge.indexOf('executeUiObserve(parsed.maxNodes)', toolStart)
+    const approvalStart = bridge.indexOf("requestDeviceToolApproval('device.ui.observe', parsed)", toolStart)
 
     expect(toolStart).toBeGreaterThanOrEqual(0)
     expect(approvalStart).toBeGreaterThan(toolStart)
