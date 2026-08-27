@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  requestDeviceToolApproval: vi.fn(),
-  executeOpenApp: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  (globalThis as { __DEV__?: boolean }).__DEV__ = false;
+  return {
+    requestDeviceToolApproval: vi.fn(),
+    executeOpenApp: vi.fn(),
+  };
+});
 
 vi.mock("@/modules/runtime/tool-approval", () => ({
   requestDeviceToolApproval: mocks.requestDeviceToolApproval,
@@ -32,9 +35,12 @@ describe("device.open_app approval bridge", () => {
     mocks.executeOpenApp.mockResolvedValue({ status: "launched", packageName: "com.example.app" });
 
     const toolSet = createDeviceToolSet();
-    const result = await toolSet["device.open_app"].execute?.({
-      packageName: "com.example.app",
-    });
+    const execute = toolSet["device.open_app"].execute;
+    if (!execute) throw new Error("device.open_app is not executable");
+    const result = await execute(
+      { packageName: "com.example.app" },
+      { toolCallId: "bridge-approval-test-approve", messages: [] },
+    );
 
     expect(mocks.requestDeviceToolApproval).toHaveBeenCalledWith("device.open_app", {
       packageName: "com.example.app",
@@ -47,9 +53,12 @@ describe("device.open_app approval bridge", () => {
     mocks.requestDeviceToolApproval.mockResolvedValue("deny");
 
     const toolSet = createDeviceToolSet();
-    const result = await toolSet["device.open_app"].execute?.({
-      packageName: "com.example.app",
-    });
+    const execute = toolSet["device.open_app"].execute;
+    if (!execute) throw new Error("device.open_app is not executable");
+    const result = await execute(
+      { packageName: "com.example.app" },
+      { toolCallId: "bridge-approval-test-deny", messages: [] },
+    );
 
     expect(mocks.requestDeviceToolApproval).toHaveBeenCalledTimes(1);
     expect(mocks.executeOpenApp).not.toHaveBeenCalled();
@@ -61,9 +70,12 @@ describe("device.open_app approval bridge", () => {
     mocks.executeOpenApp.mockResolvedValue({ status: "launched", packageName: "com.example.app" });
 
     const toolSet = createDeviceToolSet();
-    await toolSet["device.open_app"].execute?.({
-      packageName: "com.example.app",
-    });
+    const execute = toolSet["device.open_app"].execute;
+    if (!execute) throw new Error("device.open_app is not executable");
+    await execute(
+      { packageName: "com.example.app" },
+      { toolCallId: "bridge-approval-test-session", messages: [] },
+    );
 
     expect(mocks.requestDeviceToolApproval).not.toHaveBeenCalled();
     expect(mocks.executeOpenApp).toHaveBeenCalledWith({ packageName: "com.example.app" });

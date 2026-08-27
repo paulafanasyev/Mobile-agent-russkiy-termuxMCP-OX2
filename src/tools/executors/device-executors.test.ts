@@ -87,6 +87,6 @@ describe('device.open_app foreground verification', () => {
       packageName: 'com.example.target',
       verified: false,
     })
-    expect(native.getTree).not.toHaveBeenCalled()
+    expect(native.getTree).toHaveBeenCalledTimes(1)
   })
 })

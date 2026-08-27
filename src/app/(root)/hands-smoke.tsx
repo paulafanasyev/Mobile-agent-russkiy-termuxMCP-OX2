@@ -35,9 +35,15 @@ export default function HandsSmokeScreen() {
         });
         log("HANDS_APPROVAL_HANDLER_SET");
 
-        const result = await wrapped["device.open_app"].execute({
-          packageName: "com.android.settings",
-        });
+        const openAppTool = wrapped["device.open_app"];
+        if (!openAppTool?.execute) {
+          throw new Error("wrapped device.open_app is not executable");
+        }
+
+        const result = await openAppTool.execute(
+          { packageName: "com.android.settings" },
+          { toolCallId: "hands-smoke", messages: [] },
+        );
 
         log(`HANDS_OPEN_APP_RESULT status=${String(result?.status)}`);
 
@@ -45,15 +51,16 @@ export default function HandsSmokeScreen() {
         log(`HANDS_SESSION_APPROVED=${String(approved)} package=com.android.settings`);
 
         if (
-          result?.status !== "launched" ||
+          result?.status !== "launched_verified" ||
           result?.packageName !== "com.android.settings" ||
+          result?.verified !== true ||
           !approved
         ) {
           throw new Error(`Unexpected Hands result/approval: ${JSON.stringify(result)}`);
         }
 
         log("HANDS_NATIVE_INTENT_REQUESTED package=com.android.settings");
-        log("PASS:DEVICE_OPEN_APP_LAUNCHED");
+        log("PASS:DEVICE_OPEN_APP_LAUNCHED_VERIFIED");
 
         if (!cancelled) {
           setEvidence([...logs]);
