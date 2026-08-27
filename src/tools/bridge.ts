@@ -28,6 +28,7 @@ function getContract(id: string) {
 function resolveAccessibilityActionType(type: string): HandsActionType {
   if (type === 'type') return 'type_text'
   if (type === 'long_press') return 'long_press'
+  if (type === 'press_key') return 'press_key'
   if (type === 'tap' || type === 'double_tap' || type === 'swipe' || type === 'scroll' || type === 'drag' || type === 'clear_text' || type === 'select_text' || type === 'copy' || type === 'paste' || type === 'back' || type === 'home' || type === 'recents') return type
   throw new Error(`Unsupported Hands accessibility action: ${type}`)
 }
