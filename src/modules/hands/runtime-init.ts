@@ -3,7 +3,7 @@ import { executeOpenApp, openAppSchema } from '../../tools/executors/device-exec
 import { executeOpenUrl, executeOpenSettings, executeHandsWait, executeHandsShare, openUrlHandsSchema, openSettingsHandsSchema, waitHandsSchema, shareHandsSchema } from '../../tools/executors/system-hands-executors'
 import { executeSetVolume, executeSetBrightness, executeToggleFlashlight, setVolumeHandsSchema, setBrightnessHandsSchema, toggleFlashlightHandsSchema } from '../../tools/executors/system-device-executors'
 import { executeSetAlarm, executeCreateCalendarEvent, executeCall, executeSendSms, executeSendMessage, alarmHandsSchema, calendarHandsSchema, callHandsSchema, smsHandsSchema, messageHandsSchema } from '../../tools/executors/telecom-calendar-hands-executors'
-import { executeHandsFileRead, executeHandsFileWrite, executeHandsFileMove, executeHandsFileDelete, executeHandsFileRename, executeHandsScreenshot, fileReadHandsSchema, fileWriteHandsSchema, filePairHandsSchema, fileDeleteHandsSchema, fileRenameHandsSchema, executeHandsMedia } from '../../tools/executors/file-media-hands-executors'
+import { executeHandsFileRead, executeHandsFileWrite, executeHandsFileMove, executeHandsFileDelete, executeHandsFileRename, executeHandsScreenshot, executeHandsCamera, fileReadHandsSchema, fileWriteHandsSchema, filePairHandsSchema, fileDeleteHandsSchema, fileRenameHandsSchema, executeHandsMedia } from '../../tools/executors/file-media-hands-executors'
 import { assertHandsExecutorsComplete, hasHandsExecutor, registerHandsExecutor } from './hands-executor-map'
 
 let initialized = false
@@ -34,6 +34,7 @@ export function initHandsExecutors(): void {
   register('accessibility.back', uiExecutor('back', { waitMs: 500, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.home', uiExecutor('home', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.recents', uiExecutor('recents', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
+  register('accessibility.press_global_action', async (args) => executeUiAction({ action: { type: 'press_key', key: args.key }, waitMs: 500, verifyStrategy: 'system_state_change' }))
   register('accessibility.read_screen', async (args) => executeUiObserve(typeof args.maxNodes === 'number' ? args.maxNodes : undefined))
   register('accessibility.find_text', async (args) => executeFindNodes({ text: args.text }))
   register('accessibility.find_element', async (args) => executeFindNodes(args))
@@ -59,8 +60,7 @@ export function initHandsExecutors(): void {
   register('android.media.pause', async () => executeHandsMedia('pause_media'))
   register('android.media.next', async () => executeHandsMedia('next_media'))
   register('android.screenshot', async () => executeHandsScreenshot())
-  register('android.key', unavailableNativeExecutor('press_key'))
-  register('android.camera', unavailableNativeExecutor('camera'))
+  register('android.camera', async () => executeHandsCamera())
   assertHandsExecutorsComplete()
   initialized = true
 }
