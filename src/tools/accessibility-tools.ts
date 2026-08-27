@@ -5,7 +5,7 @@ const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('tap'), x: z.number().finite(), y: z.number().finite() }),
   z.object({ type: z.literal('long_press'), x: z.number().finite(), y: z.number().finite(), durationMs: z.number().int().min(400).max(3000).optional() }),
   z.object({ type: z.literal('swipe'), x: z.number().finite(), y: z.number().finite(), x2: z.number().finite(), y2: z.number().finite(), durationMs: z.number().int().min(50).max(2000).optional() }),
-  z.object({ type: z.literal('type'), text: z.string().max(4096), nodeId: z.string().regex(/^0(?:\.[0-9]+)*$/).optional() }),
+  z.object({ type: z.literal('type'), text: z.string().max(4096), nodeId: z.string().regex(/^0(?:\.[0-9]+)*$/) }),
   z.object({ type: z.literal('back') }),
   z.object({ type: z.literal('home') }),
   z.object({ type: z.literal('recents') }),
