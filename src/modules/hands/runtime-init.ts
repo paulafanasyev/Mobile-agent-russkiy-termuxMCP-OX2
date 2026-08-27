@@ -15,6 +15,14 @@ import {
   shareHandsSchema,
 } from '../../tools/executors/system-hands-executors'
 import {
+  executeSetVolume,
+  executeSetBrightness,
+  executeToggleFlashlight,
+  setVolumeHandsSchema,
+  setBrightnessHandsSchema,
+  toggleFlashlightHandsSchema,
+} from '../../tools/executors/system-device-executors'
+import {
   assertHandsExecutorsComplete,
   hasHandsExecutor,
   registerHandsExecutor,
@@ -65,12 +73,8 @@ export function initHandsExecutors(): void {
   register('accessibility.home', uiExecutor('home', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.recents', uiExecutor('recents', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
 
-  register('accessibility.observe', async (args) =>
-    executeUiObserve(typeof args.maxNodes === 'number' ? args.maxNodes : undefined),
-  )
-  register('accessibility.read_screen', async (args) =>
-    executeUiObserve(typeof args.maxNodes === 'number' ? args.maxNodes : undefined),
-  )
+  register('accessibility.observe', async (args) => executeUiObserve(typeof args.maxNodes === 'number' ? args.maxNodes : undefined))
+  register('accessibility.read_screen', async (args) => executeUiObserve(typeof args.maxNodes === 'number' ? args.maxNodes : undefined))
   register('accessibility.find', async (args) => executeFindNodes(args))
   register('accessibility.find_text', async (args) => executeFindNodes({ text: args.text }))
   register('accessibility.find_element', async (args) => executeFindNodes(args))
@@ -80,6 +84,9 @@ export function initHandsExecutors(): void {
   register('android.intent.settings', async (args) => executeOpenSettings(openSettingsHandsSchema.parse(args)))
   register('runtime.wait', async (args) => executeHandsWait(waitHandsSchema.parse(args)))
   register('android.intent.share', async (args) => executeHandsShare(shareHandsSchema.parse(args)))
+  register('android.audio.volume', async (args) => executeSetVolume(setVolumeHandsSchema.parse(args)))
+  register('android.display.brightness', async (args) => executeSetBrightness(setBrightnessHandsSchema.parse(args)))
+  register('android.camera.flashlight', async (args) => executeToggleFlashlight(toggleFlashlightHandsSchema.parse(args)))
 
   assertHandsExecutorsComplete()
   initialized = true
