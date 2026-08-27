@@ -1,6 +1,9 @@
 import { requireNativeModule } from 'expo'
 import { Platform } from 'react-native'
 
+export const HANDS_MAX_TREE_NODES = 200
+export const HANDS_MAX_TEXT_LENGTH = 4096
+
 export type AccessibilityNode = {
   id: string
   text: string | null
@@ -28,9 +31,9 @@ export async function isAccessibilityEnabled(): Promise<boolean> {
   return Native.isEnabled()
 }
 
-export async function getAccessibilityTree(maxNodes = 250): Promise<AccessibilityNode[]> {
+export async function getAccessibilityTree(maxNodes = HANDS_MAX_TREE_NODES): Promise<AccessibilityNode[]> {
   if (!Native) return []
-  return Native.getTree(Math.max(1, Math.min(maxNodes, 1000)))
+  return Native.getTree(Math.max(1, Math.min(maxNodes, HANDS_MAX_TREE_NODES)))
 }
 
 export async function performAccessibilityAction(action: {
