@@ -42,7 +42,7 @@ export default function HandsSmokeScreen() {
 
         const result = await openAppTool.execute(
           { packageName: "com.android.settings" },
-          { toolCallId: "hands-smoke", messages: [] },
+          { toolCallId: "hands-smoke", messages: [], context: {} },
         );
 
         log(`HANDS_OPEN_APP_RESULT status=${String(result?.status)}`);

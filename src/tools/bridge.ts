@@ -1,10 +1,3 @@
-/**
- * Device-tool bridge for the existing AI SDK ToolSet path.
- *
- * Proven Hands pattern adopted here: one atomic UI action, then observation.
- * OpenDroid/MobileAgent-style planning remains above this layer; this bridge
- * never invents an action or claims verification on its own.
- */
 import { tool, type ToolSet } from 'ai'
 
 import {
@@ -13,7 +6,7 @@ import {
   isAppApprovedForSession,
   approveAppForSession,
 } from './device-tools'
-import { ACCESSIBILITY_TOOLS } from './accessibility-tools'
+import { ACCESSIBILITY_TOOLS, uiActSchema, uiObserveSchema } from './accessibility-tools'
 import {
   executeFileRead,
   executeListApps,
@@ -61,22 +54,24 @@ export function createDeviceToolSet(): ToolSet {
     }),
     'device.ui.observe': tool({
       description: getContract('device.ui.observe').description,
-      inputSchema: getContract('device.ui.observe').inputSchema,
+      inputSchema: uiObserveSchema,
       execute: async (args) => {
-        const decision = await requestDeviceToolApproval('device.ui.observe', args)
+        const parsed = uiObserveSchema.parse(args)
+        const decision = await requestDeviceToolApproval('device.ui.observe', parsed)
         if (decision === 'abort') throw new Error('Request aborted.')
         if (decision !== 'approve') return { status: 'needs_approval', nodes: [] }
-        return executeUiObserve(args.maxNodes)
+        return executeUiObserve(parsed.maxNodes)
       },
     }),
     'device.ui.act': tool({
       description: getContract('device.ui.act').description,
-      inputSchema: getContract('device.ui.act').inputSchema,
+      inputSchema: uiActSchema,
       execute: async (args) => {
-        const decision = await requestDeviceToolApproval('device.ui.act', args)
+        const parsed = uiActSchema.parse(args)
+        const decision = await requestDeviceToolApproval('device.ui.act', parsed)
         if (decision === 'abort') throw new Error('Request aborted.')
         if (decision !== 'approve') return { status: 'needs_approval', verified: false }
-        return executeUiAction(args)
+        return executeUiAction(parsed)
       },
     }),
   }

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { ToolContractSpec } from './types'
 
-const actionSchema = z.discriminatedUnion('type', [
+export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('tap'), x: z.number().finite(), y: z.number().finite() }),
   z.object({ type: z.literal('long_press'), x: z.number().finite(), y: z.number().finite(), durationMs: z.number().int().min(400).max(3000).optional() }),
   z.object({ type: z.literal('swipe'), x: z.number().finite(), y: z.number().finite(), x2: z.number().finite(), y2: z.number().finite(), durationMs: z.number().int().min(50).max(2000).optional() }),
@@ -11,12 +11,23 @@ const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('recents') }),
 ])
 
+export const uiObserveSchema = z.object({
+  maxNodes: z.number().int().min(1).max(200).default(200),
+})
+
+export const uiActSchema = z.object({
+  action: actionSchema,
+  waitMs: z.number().int().min(100).max(2000).default(400),
+  expectedText: z.string().max(500).optional(),
+  expectedPackage: z.string().max(255).optional(),
+})
+
 export const ACCESSIBILITY_TOOLS: ToolContractSpec<unknown, unknown>[] = [
   {
     id: 'device.ui.observe',
     version: '1.0.0',
     description: 'Читает доступное Android UI-дерево текущего экрана для точного выбора элементов.',
-    inputSchema: z.object({ maxNodes: z.number().int().min(1).max(200).default(200) }),
+    inputSchema: uiObserveSchema,
     outputSchema: z.any(),
     requiredCapability: 'NO_PRIVILEGE',
     risk: 'low',
@@ -29,12 +40,7 @@ export const ACCESSIBILITY_TOOLS: ToolContractSpec<unknown, unknown>[] = [
     id: 'device.ui.act',
     version: '1.0.0',
     description: 'Выполняет одно атомарное действие Android UI и возвращает наблюдение после него.',
-    inputSchema: z.object({
-      action: actionSchema,
-      waitMs: z.number().int().min(100).max(2000).default(400),
-      expectedText: z.string().max(500).optional(),
-      expectedPackage: z.string().max(255).optional(),
-    }),
+    inputSchema: uiActSchema,
     outputSchema: z.any(),
     requiredCapability: 'NO_PRIVILEGE',
     risk: 'medium',
@@ -44,5 +50,3 @@ export const ACCESSIBILITY_TOOLS: ToolContractSpec<unknown, unknown>[] = [
     availability: async () => true,
   },
 ]
-
-export { actionSchema }

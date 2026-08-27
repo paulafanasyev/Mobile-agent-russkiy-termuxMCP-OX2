@@ -1,12 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => {
-  (globalThis as { __DEV__?: boolean }).__DEV__ = false;
-  return {
-    requestDeviceToolApproval: vi.fn(),
-    executeOpenApp: vi.fn(),
-  };
-});
+const mocks = vi.hoisted(() => ({
+  requestDeviceToolApproval: vi.fn(),
+  executeOpenApp: vi.fn(),
+}));
 
 vi.mock("@/modules/runtime/tool-approval", () => ({
   requestDeviceToolApproval: mocks.requestDeviceToolApproval,
@@ -19,6 +16,11 @@ vi.mock("@/tools/executors/device-executors", () => ({
   listAppsSchema: { parse: (value: unknown) => value },
   openAppSchema: { parse: (value: unknown) => value },
   readFileSchema: { parse: (value: unknown) => value },
+}));
+
+vi.mock("@/tools/executors/accessibility-executors", () => ({
+  executeUiAction: vi.fn(),
+  executeUiObserve: vi.fn(),
 }));
 
 import { approveAppForSession, clearSessionApprovals } from "@/tools/device-tools";
@@ -39,7 +41,7 @@ describe("device.open_app approval bridge", () => {
     if (!execute) throw new Error("device.open_app is not executable");
     const result = await execute(
       { packageName: "com.example.app" },
-      { toolCallId: "bridge-approval-test-approve", messages: [] },
+      { toolCallId: "bridge-approval-test-approve", messages: [], context: {} },
     );
 
     expect(mocks.requestDeviceToolApproval).toHaveBeenCalledWith("device.open_app", {
@@ -57,7 +59,7 @@ describe("device.open_app approval bridge", () => {
     if (!execute) throw new Error("device.open_app is not executable");
     const result = await execute(
       { packageName: "com.example.app" },
-      { toolCallId: "bridge-approval-test-deny", messages: [] },
+      { toolCallId: "bridge-approval-test-deny", messages: [], context: {} },
     );
 
     expect(mocks.requestDeviceToolApproval).toHaveBeenCalledTimes(1);
@@ -74,7 +76,7 @@ describe("device.open_app approval bridge", () => {
     if (!execute) throw new Error("device.open_app is not executable");
     await execute(
       { packageName: "com.example.app" },
-      { toolCallId: "bridge-approval-test-session", messages: [] },
+      { toolCallId: "bridge-approval-test-session", messages: [], context: {} },
     );
 
     expect(mocks.requestDeviceToolApproval).not.toHaveBeenCalled();
