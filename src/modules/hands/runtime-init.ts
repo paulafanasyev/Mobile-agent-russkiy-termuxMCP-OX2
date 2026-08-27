@@ -5,6 +5,16 @@ import {
 } from '../../tools/executors/accessibility-executors'
 import { executeOpenApp, openAppSchema } from '../../tools/executors/device-executors'
 import {
+  executeOpenUrl,
+  executeOpenSettings,
+  executeHandsWait,
+  executeHandsShare,
+  openUrlHandsSchema,
+  openSettingsHandsSchema,
+  waitHandsSchema,
+  shareHandsSchema,
+} from '../../tools/executors/system-hands-executors'
+import {
   assertHandsExecutorsComplete,
   hasHandsExecutor,
   registerHandsExecutor,
@@ -66,6 +76,10 @@ export function initHandsExecutors(): void {
   register('accessibility.find_element', async (args) => executeFindNodes(args))
 
   register('android.intent.launch_app', async (args) => executeOpenApp(openAppSchema.parse(args)))
+  register('android.intent.open_url', async (args) => executeOpenUrl(openUrlHandsSchema.parse(args)))
+  register('android.intent.settings', async (args) => executeOpenSettings(openSettingsHandsSchema.parse(args)))
+  register('runtime.wait', async (args) => executeHandsWait(waitHandsSchema.parse(args)))
+  register('android.intent.share', async (args) => executeHandsShare(shareHandsSchema.parse(args)))
 
   assertHandsExecutorsComplete()
   initialized = true
