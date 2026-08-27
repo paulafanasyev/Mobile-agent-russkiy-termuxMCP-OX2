@@ -56,9 +56,13 @@ function treeSatisfies(nodes: AccessibilityNode[], expectedText?: string, expect
   if (expectedPackage && rootPackage(nodes) !== expectedPackage) return false
   if (!expectedText) return Boolean(expectedPackage)
 
+  const expected = expectedText.trim()
+  if (!expected) return false
+
   return nodes.some((node) => {
-    const text = `${node.text ?? ''} ${node.contentDescription ?? ''}`
-    return text.includes(expectedText)
+    const text = node.text?.trim() ?? ''
+    const contentDescription = node.contentDescription?.trim() ?? ''
+    return text === expected || contentDescription === expected
   })
 }
 
