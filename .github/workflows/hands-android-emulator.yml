@@ -36,7 +36,7 @@ jobs:
           CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')
           test "$CONCLUSION" = success
           gh api "repos/$GITHUB_REPOSITORY/contents/src/app/(root)/hands-smoke.tsx?ref=$SOURCE_SHA" \
-            --jq '.content' | base64 -d | grep -q 'PASS:DEVICE_OPEN_APP_LAUNCHED'
+            --jq '.content' | base64 -d | grep -q 'PASS:REAL_ACCESSIBILITY_TAP_VERIFIED'
           {
             echo "source_run_id=$RUN_ID"
             echo "source_sha=$SOURCE_SHA"
@@ -82,12 +82,17 @@ jobs:
             adb install -r "$GITHUB_WORKSPACE/hands-smoke.apk"
             echo "INSTALL=PASS" | tee hands-runtime.txt
 
+            # Enable the real AccessibilityService; no mock bridge is allowed.
+            adb shell settings put secure accessibility_enabled 1
+            adb shell settings put secure enabled_accessibility_services 'ru.mirsamozanyatykh.mobileagent/expo.modules.accessibilityagent.OX2AccessibilityService'
+            echo "ACCESSIBILITY_SERVICE_ENABLED=PASS" | tee -a hands-runtime.txt
+
             adb shell am start -W \
               -a android.intent.action.VIEW \
               -d 'mobile-agent://hands-smoke' \
               -p ru.mirsamozanyatykh.mobileagent
             echo "OX2_LAUNCH=PASS" | tee -a hands-runtime.txt
-            sleep 3
+            sleep 4
 
             adb shell dumpsys activity activities > hands-activities-after.txt
             adb shell dumpsys window > hands-window-after.txt
@@ -109,18 +114,17 @@ jobs:
             grep -q 'HANDS_SMOKE_START' hands-logcat.txt
             grep -q 'HANDS_TOOLSET_CREATED' hands-logcat.txt
             grep -q 'HANDS_APPROVAL_HANDLER_SET' hands-logcat.txt
+            grep -q 'ACCESSIBILITY_SERVICE_ENABLED=PASS' hands-runtime.txt
+            grep -q 'HANDS_UI_OBSERVE_RESULT status=observed' hands-logcat.txt
+            grep -q 'HANDS_UI_ACT_RESULT status=verified verified=true' hands-logcat.txt
+            grep -q 'PASS:REAL_ACCESSIBILITY_TAP_VERIFIED' hands-logcat.txt
             grep -q 'HANDS_SESSION_APPROVED=true package=com.android.settings' hands-logcat.txt
             grep -q 'HANDS_NATIVE_INTENT_REQUESTED package=com.android.settings' hands-logcat.txt
-            grep -q 'PASS:DEVICE_OPEN_APP_LAUNCHED' hands-logcat.txt
+            grep -q 'PASS:DEVICE_OPEN_APP_LAUNCHED_VERIFIED' hands-logcat.txt
             echo 'HANDS_RUNTIME=PASS' | tee -a hands-runtime.txt
 
-            if grep -q 'PASS:DEVICE_OPEN_APP_LAUNCHED' hands-ui.xml; then
-              echo 'HANDS_UI=PASS' | tee -a hands-runtime.txt
-            else
-              echo 'HANDS_UI=FAIL' | tee -a hands-runtime.txt
-              cat hands-ui.xml || true
-              exit 1
-            fi
+            grep -q 'HANDS_ACTION_EXECUTED' hands-ui.xml
+            echo 'HANDS_UI=PASS' | tee -a hands-runtime.txt
 
             adb shell pidof com.android.settings | tee hands-target-pid.txt
             grep -E 'FATAL EXCEPTION|AndroidRuntime' hands-logcat.txt > hands-fatal.txt || true
