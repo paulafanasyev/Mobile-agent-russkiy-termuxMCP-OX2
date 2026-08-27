@@ -20,7 +20,18 @@ export const smsHandsSchema = z.object({ phone: z.string().regex(/^\+?[0-9][0-9 
 export const messageHandsSchema = smsHandsSchema
 
 const unsupported = (status: string) => ({ status, verified: false })
+const intentOnly = (intent: string) => ({
+  status: 'intent_launched' as const,
+  verified: false,
+  verification: 'intent_only' as const,
+  intent,
+})
 
+/**
+ * Android Intent launch is not proof that the requested side effect happened.
+ * These executors deliberately return verified=false until a native
+ * postcondition/evidence adapter proves the resulting device state.
+ */
 export async function executeSetAlarm(args: z.infer<typeof alarmHandsSchema>) {
   if (Platform.OS !== 'android') return unsupported('unsupported_platform')
   const parsed = alarmHandsSchema.parse(args)
@@ -31,7 +42,7 @@ export async function executeSetAlarm(args: z.infer<typeof alarmHandsSchema>) {
       ...(parsed.message ? { 'android.intent.extra.alarm.MESSAGE': parsed.message } : {}),
     },
   })
-  return { status: 'intent_launched', verified: true, hour: parsed.hour, minutes: parsed.minutes }
+  return { ...intentOnly('android.intent.action.SET_ALARM'), hour: parsed.hour, minutes: parsed.minutes }
 }
 
 export async function executeCreateCalendarEvent(args: z.infer<typeof calendarHandsSchema>) {
@@ -41,20 +52,20 @@ export async function executeCreateCalendarEvent(args: z.infer<typeof calendarHa
   await IntentLauncher.startActivityAsync('android.intent.action.INSERT', {
     data: 'content://com.android.calendar/events',
     extra: {
-      'title': parsed.title,
-      'beginTime': parsed.startMs,
-      'endTime': endMs,
-      ...(parsed.location ? { 'eventLocation': parsed.location } : {}),
+      title: parsed.title,
+      beginTime: parsed.startMs,
+      endTime: endMs,
+      ...(parsed.location ? { eventLocation: parsed.location } : {}),
     },
   })
-  return { status: 'intent_launched', verified: true, title: parsed.title }
+  return { ...intentOnly('android.intent.action.INSERT'), title: parsed.title }
 }
 
 export async function executeCall(args: z.infer<typeof callHandsSchema>) {
   if (Platform.OS !== 'android') return unsupported('unsupported_platform')
   const parsed = callHandsSchema.parse(args)
   await IntentLauncher.startActivityAsync('android.intent.action.DIAL', { data: `tel:${parsed.phone.replace(/[^+0-9]/g, '')}` })
-  return { status: 'intent_launched', verified: true, phone: parsed.phone }
+  return { ...intentOnly('android.intent.action.DIAL'), phone: parsed.phone }
 }
 
 export async function executeSendSms(args: z.infer<typeof smsHandsSchema>) {
@@ -64,7 +75,7 @@ export async function executeSendSms(args: z.infer<typeof smsHandsSchema>) {
     data: `smsto:${parsed.phone.replace(/[^+0-9]/g, '')}`,
     extra: { sms_body: parsed.message },
   })
-  return { status: 'intent_launched', verified: true, phone: parsed.phone }
+  return { ...intentOnly('android.intent.action.SENDTO'), phone: parsed.phone }
 }
 
 export async function executeSendMessage(args: z.infer<typeof messageHandsSchema>) {
