@@ -46,18 +46,39 @@ export async function executeUiObserve(maxNodes: number) {
   }
 }
 
-function treeMatches(nodes: AccessibilityNode[], expectedText?: string, expectedPackage?: string): boolean {
+function rootPackage(nodes: AccessibilityNode[]): string | null {
+  return nodes.find((node) => node.id === '0')?.packageName ?? nodes[0]?.packageName ?? null
+}
+
+function treeSatisfies(nodes: AccessibilityNode[], expectedText?: string, expectedPackage?: string): boolean {
   if (nodes.length === 0) return false
 
-  // root node (id=0) originates from rootInActiveWindow, so its package is
-  // the active accessibility window rather than an arbitrary descendant.
-  if (expectedPackage && nodes[0]?.packageName !== expectedPackage) return false
+  if (expectedPackage && rootPackage(nodes) !== expectedPackage) return false
   if (!expectedText) return Boolean(expectedPackage)
 
   return nodes.some((node) => {
     const text = `${node.text ?? ''} ${node.contentDescription ?? ''}`
     return text.includes(expectedText)
   })
+}
+
+function treeMatchesCausally(
+  before: AccessibilityNode[],
+  after: AccessibilityNode[],
+  expectedText?: string,
+  expectedPackage?: string,
+): boolean {
+  if (!expectedText && !expectedPackage) return false
+  if (!treeSatisfies(after, expectedText, expectedPackage)) return false
+
+  const textTransitioned = Boolean(
+    expectedText && !treeSatisfies(before, expectedText),
+  )
+  const packageTransitioned = Boolean(
+    expectedPackage && rootPackage(before) !== expectedPackage,
+  )
+
+  return textTransitioned || packageTransitioned
 }
 
 export async function executeUiAction(input: {
@@ -82,7 +103,7 @@ export async function executeUiAction(input: {
   const after = await getAccessibilityTree(200)
   const hasExpectation = Boolean(input.expectedText || input.expectedPackage)
   const verified = hasExpectation
-    ? treeMatches(after, input.expectedText, input.expectedPackage)
+    ? treeMatchesCausally(before, after, input.expectedText, input.expectedPackage)
     : false
 
   return {
