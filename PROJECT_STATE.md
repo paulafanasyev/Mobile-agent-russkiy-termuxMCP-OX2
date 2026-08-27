@@ -12,6 +12,7 @@ Build and stabilize the Android application «Мобильный ИИ-агент
 - Shizuku is not root.
 - Offline baseline is required; online AI is additional.
 - OmniRoute is external tooling only and must not be added to this project.
+- **NEW RELEASE RULE:** Do not start an APK build merely to discover whether the project builds. First finish the intended Hands execution layer and product design. APK build is a final validation stage after those gates are satisfied.
 
 ## Baseline
 - Active repository: paulafanasyev/Mobile-agent-russkiy-termuxMCP-OX2. [VERIFIED]
@@ -26,7 +27,7 @@ Build and stabilize the Android application «Мобильный ИИ-агент
 - Artifact: mobile-agent-russkiy-debug-apk. [VERIFIED]
 - Artifact size: 169,313,200 bytes. [VERIFIED]
 - Artifact SHA-256: 0eb608637aa77329ad6834b7a816c16f57fa0ced9eeb9826f16bf067417a12e7. [VERIFIED]
-- M0 = ACHIEVED. [VERIFIED]
+- M0 = ACHIEVED for that historical commit. It is not evidence that the current HEAD builds.
 
 ## M1 — APK static validation
 - APK artifact downloaded and unpacked from artifact 9497279429. [VERIFIED]
@@ -44,26 +45,44 @@ Build and stabilize the Android application «Мобильный ИИ-агент
 - `FirewallVpnService.kt` at `modules/firewall/android/src/main/java/expo/modules/firewall/FirewallVpnService.kt` constructs `LibboxForwardingBridge` and only marks firewall RUNNING after a successful bridge result. [VERIFIED]
 - `LibboxForwardingBridge.kt` at `modules/firewall/android/src/main/java/com/mobileshell/firewall/LibboxForwardingBridge.kt` checks `Class.forName("libbox.Libbox")`, but intentionally always returns `StartResult(false)` because the real PlatformInterface/OpenTun/CommandServer adapter is not wired yet. [VERIFIED]
 - Therefore the previously suspected unconditional static `System.loadLibrary("box")` crash is NOT present in the current main branch. [VERIFIED]
-- The actual current blocker is different: the firewall compatibility bridge does not start libbox and therefore cannot reach RUNNING. [VERIFIED]
+- The actual current firewall blocker is the incomplete compatibility bridge, not a proven build/runtime crash. [VERIFIED]
 - Non-arm64 graceful degradation is still [UNVERIFIED] at runtime; no real-device/emulator smoke test has been performed.
 
-## Cycle 16 — INCIDENT #2 + firewall truth
-- OX Alpha cycle-15 audit contained false [VERIFIED] claims: nonexistent `System.loadLibrary("box")` in active FirewallModule.kt; fabricated workflow command quote. Cause: wrong-source file read among duplicate java dirs, then status was asserted without reproducible path verification.
-- FIX #3 is withdrawn completely. Do not implement a fix for nonexistent code.
-- Process correction: every load-bearing code claim now cites the exact file path.
-- REAL firewall status [VERIFIED by independent reads]: libbox.so is packaged and detectable; `LibboxForwardingBridge` intentionally returns `StartResult(false)` until the real PlatformInterface/OpenTun/CommandServer adapter is implemented; `FirewallVpnService` gates RUNNING on bridge success.
-- This is an UNIMPLEMENTED FEATURE, not a proven build/runtime crash.
-- Journal correction commit: 2527c060a9e682cd7900df6e0b62a4fae7acfa5f.
-- M1 is not closed until binary versionCode and runtime smoke test are complete.
+## Current stage — HANDS FIRST / DESIGN FIRST
+- Branch: `agent1/hands-design-v1`.
+- Design baseline: `docs/DESIGN-CONCEPT-V6-HANDS-FIRST.md`. [VERIFIED from branch]
+- Current Hands vocabulary declares many action types, but the native/UI tool surface currently exposes only a small subset. [VERIFIED from `src/modules/hands/action-model.ts`, `src/tools/bridge.ts`]
+- Current accessibility native module implements: UI tree snapshot, tap, long press, swipe, type, back, home, recents. [VERIFIED from `modules/accessibility-agent/android/src/main/java/expo/modules/accessibilityagent/OX2AccessibilityService.kt` and `AccessibilityAgentModule.kt`]
+- Current JS bridge exposes: `device.apps.list`, `device.open_app`, `device.files.read`, `device.ui.observe`, `device.ui.act`. [VERIFIED from `src/tools/bridge.ts`]
+- Therefore Hands is **not yet complete** for the declared universal action vocabulary. Do not call it complete until the intended supported actions have real adapters and end-to-end verification.
+- Current `src/app/(root)/index.tsx` routes the first screen to `/svetlana`. [VERIFIED]
+- Current `/svetlana` screen is a dark, voice-centric surface but is still a first implementation rather than the final v6 design system. [VERIFIED from `src/app/(root)/svetlana.tsx`]
 
-## Next
-1. Complete binary versionCode decoding if needed.
-2. Install APK on a real Android device and run smoke test.
-3. Verify normal app launch independently of firewall.
-4. Verify firewall prepare/start/status behavior and capture logcat.
-5. Fix only issues demonstrated by runtime verification.
-6. Then perform a dedicated LibboxForwardingBridge audit and implement the real adapter.
-7. Rebuild and repeat smoke test.
+## Build gate — BLOCKED BY DESIGN, INTENTIONALLY
+No debug/release APK build should be launched until all gates below are met on the same commit:
+
+1. Hands scope is implemented as real native/runtime adapters, with unsupported operations explicitly reported rather than simulated.
+2. Approval is enforced at the execution boundary and covered by negative tests.
+3. Causal verification is proven for text/content-description and foreground-package transitions.
+4. Светлана startup and core task flow use the final design system.
+5. Provider/model routing is explicitly separated; no provider/model is claimed working from catalog presence alone.
+6. Offline LLM is opt-in/on-demand; no large default model is bundled or initialized at startup.
+7. LiteRT and llama.cpp remain separate runtime paths.
+8. `pnpm test` and `pnpm exec tsc --noEmit` pass on the exact release candidate commit.
+9. Only after gates 1–8: clean Expo prebuild, Android debug build, install, launch, Hands emulator/device smoke, and artifact inspection.
+
+### Important distinction
+The recent CI failures in the working history are evidence of defects in the current development state, but they are **not a reason to rush another APK build**. We first close the functional/design gates; then the APK build is run once as a controlled release validation.
+
+## Next actions
+1. Complete the Hands adapter/approval/verification chain for the intended action scope.
+2. Expand native Android capabilities where a real Android API/module is required.
+3. Integrate Hands into Светлана's task orchestration rather than leaving it as isolated tools.
+4. Apply Design Concept v6 to Светлана, task execution, permissions and settings.
+5. Add/strengthen tests for the real execution boundary and causal verification.
+6. Re-run unit/type checks on the branch/PR.
+7. Agent 2 performs adversarial review from the resulting evidence.
+8. Only after Agent 2 accepts the functional/design gate: build APK and perform runtime validation.
 
 ## fullstack-agent audit
 Use architecture ideas only; do not copy AGPL code/text. Adopt independently: reactive avatar FSM, PTT-first voice, user data outside code, identity adoption, self-diagnostics, modular tool registry, honest offline/online separation.
