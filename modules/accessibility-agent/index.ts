@@ -7,6 +7,7 @@ export type AccessibilityNode = {
   id: string
   text: string | null
   contentDescription: string | null
+  resourceId?: string | null
   className: string | null
   packageName: string | null
   clickable: boolean
@@ -15,6 +16,4 @@ export type AccessibilityNode = {
   bounds: { left: number; top: number; right: number; bottom: number }
 }
 
-export async function isAccessibilityEnabled(): Promise<boolean> {
-  return nativeIsAccessibilityEnabled()
-}
+export async function isAccessibilityEnabled(): Promise<boolean> { return nativeIsAccessibilityEnabled() }
