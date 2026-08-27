@@ -1,5 +1,7 @@
 package expo.modules.accessibilityagent
 
+import android.os.Build
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.json.JSONObject
@@ -14,6 +16,17 @@ class AccessibilityAgentModule : Module() {
       val json = try { JSONObject(queryJson) } catch (_: Exception) { return@AsyncFunction emptyList<Map<String, Any?>>() }
       val query = mutableMapOf<String, Any?>(); json.keys().forEach { k -> query[k] = json.get(k) }
       service.find(query)
+    }
+    AsyncFunction("screenshot") { promise: Promise ->
+      val service = OX2AccessibilityService.instance
+      if (service == null) {
+        promise.resolve(mapOf("status" to "accessibility_disabled", "verified" to false))
+      } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        promise.resolve(mapOf("status" to "unsupported_android_version", "verified" to false, "minimumApi" to 30))
+      } else {
+        try { promise.resolve(HandsScreenshot.capture(service)) }
+        catch (t: Throwable) { promise.resolve(mapOf("status" to "screenshot_failed", "verified" to false, "reason" to (t.message ?: t.javaClass.simpleName))) }
+      }
     }
     AsyncFunction("perform") { actionJson: String ->
       val service = OX2AccessibilityService.instance ?: return@AsyncFunction mapOf("status" to "accessibility_disabled", "action" to "unknown")
