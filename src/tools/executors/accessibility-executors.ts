@@ -1,38 +1,27 @@
-import { requireNativeModule } from 'expo'
-import { Platform } from 'react-native'
 import {
   HANDS_MAX_TREE_NODES,
   isAccessibilityEnabled,
   type AccessibilityNode,
 } from '../../../modules/accessibility-agent'
-import { actionSchema } from '../accessibility-tools'
+import {
+  nativeGetAccessibilityTree,
+  nativePerformAccessibilityAction,
+} from '../../../modules/accessibility-agent/native'
+import { actionSchema, type AccessibilityAction } from '../accessibility-tools'
 
-type NativeAccessibilityAgent = {
-  getTree(maxNodes: number): Promise<AccessibilityNode[]>
-  perform(actionJson: string): Promise<{ status: string; action: string }>
+type AccessibilityExecutionResult = {
+  status: string
+  action: string
 }
-
-const Native = Platform.OS === 'android'
-  ? requireNativeModule<NativeAccessibilityAgent>('AccessibilityAgent')
-  : null
 
 async function getAccessibilityTree(maxNodes = HANDS_MAX_TREE_NODES): Promise<AccessibilityNode[]> {
-  if (!Native) return []
-  return Native.getTree(Math.max(1, Math.min(maxNodes, HANDS_MAX_TREE_NODES)))
+  return nativeGetAccessibilityTree(Math.max(1, Math.min(maxNodes, HANDS_MAX_TREE_NODES)))
 }
 
-async function performAccessibilityAction(action: {
-  type: 'tap' | 'long_press' | 'swipe' | 'type' | 'back' | 'home' | 'recents'
-  x?: number
-  y?: number
-  x2?: number
-  y2?: number
-  durationMs?: number
-  text?: string
-  nodeId?: string
-}) {
-  if (!Native) return { status: 'unsupported_platform', action: action.type }
-  return Native.perform(JSON.stringify(action))
+async function performAccessibilityAction(
+  action: AccessibilityAction,
+): Promise<AccessibilityExecutionResult> {
+  return nativePerformAccessibilityAction(action)
 }
 
 export async function executeUiObserve(maxNodes: number) {
@@ -93,14 +82,14 @@ export async function executeUiAction(input: {
     return { status: 'accessibility_disabled', action: action.type, verified: false }
   }
 
-  const before = await getAccessibilityTree(200)
+  const before = await getAccessibilityTree(HANDS_MAX_TREE_NODES)
   const result = await performAccessibilityAction(action)
   if (result.status !== 'executed') {
     return { ...result, verified: false, before, after: before }
   }
 
   await new Promise((resolve) => setTimeout(resolve, input.waitMs))
-  const after = await getAccessibilityTree(200)
+  const after = await getAccessibilityTree(HANDS_MAX_TREE_NODES)
   const hasExpectation = Boolean(input.expectedText || input.expectedPackage)
   const verified = hasExpectation
     ? treeMatchesCausally(before, after, input.expectedText, input.expectedPackage)
