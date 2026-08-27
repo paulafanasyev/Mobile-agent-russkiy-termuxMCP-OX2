@@ -11,6 +11,8 @@ export const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('recents') }),
 ])
 
+export type AccessibilityAction = z.infer<typeof actionSchema>
+
 export const uiObserveSchema = z.object({
   maxNodes: z.number().int().min(1).max(200).default(200),
 })
