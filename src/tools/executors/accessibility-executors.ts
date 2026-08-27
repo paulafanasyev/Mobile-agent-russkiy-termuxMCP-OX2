@@ -75,14 +75,10 @@ function treeMatchesCausally(
   if (!expectedText && !expectedPackage) return false
   if (!treeSatisfies(after, expectedText, expectedPackage)) return false
 
-  const textTransitioned = Boolean(
-    expectedText && !treeSatisfies(before, expectedText),
-  )
-  const packageTransitioned = Boolean(
-    expectedPackage && rootPackage(before) !== expectedPackage,
-  )
+  const textTransitioned = !expectedText || !treeSatisfies(before, expectedText)
+  const packageTransitioned = !expectedPackage || rootPackage(before) !== expectedPackage
 
-  return textTransitioned || packageTransitioned
+  return textTransitioned && packageTransitioned
 }
 
 export async function executeUiAction(input: {

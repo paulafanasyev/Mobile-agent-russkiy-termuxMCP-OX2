@@ -139,4 +139,25 @@ describe('Hands causal UI verification', () => {
     expect(result.verified).toBe(true)
     expect(result.status).toBe('verified')
   })
+
+  it('requires both text and package transitions when both are requested', async () => {
+    native.getTree
+      .mockResolvedValueOnce([
+        node('0', 'Done', 'com.example.old'),
+      ])
+      .mockResolvedValueOnce([
+        node('0', 'Done', 'com.example.target'),
+      ])
+
+    const { executeUiAction } = await import('./accessibility-executors')
+    const result = await executeUiAction({
+      action: { type: 'tap', x: 10, y: 10 },
+      waitMs: 0,
+      expectedText: 'Done',
+      expectedPackage: 'com.example.target',
+    })
+
+    expect(result.verified).toBe(false)
+    expect(result.status).toBe('executed_unverified')
+  })
 })
