@@ -5,7 +5,6 @@ export default defineConfig({
     __DEV__: true,
   },
   test: {
-    setupFiles: ["./vitest.setup.ts"],
     server: {
       deps: {
         inline: ["expo"],
