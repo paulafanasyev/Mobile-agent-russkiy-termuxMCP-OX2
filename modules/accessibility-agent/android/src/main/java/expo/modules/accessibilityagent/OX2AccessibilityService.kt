@@ -44,12 +44,29 @@ class OX2AccessibilityService : AccessibilityService() {
     "back" -> if (performGlobalAction(GLOBAL_ACTION_BACK)) "executed" else "failed"
     "home" -> if (performGlobalAction(GLOBAL_ACTION_HOME)) "executed" else "failed"
     "recents" -> if (performGlobalAction(GLOBAL_ACTION_RECENTS)) "executed" else "failed"
+    "press_key" -> pressGlobalAction(action["key"] as? String)
     "tap" -> gesture(action, false)
     "double_tap" -> doubleTap(action)
     "long_press" -> gesture(action, true)
     "swipe", "scroll", "drag" -> gesture(action, false)
     "type", "clear_text", "select_text", "copy", "paste" -> nodeAction(action)
     else -> "unsupported"
+  }
+
+  private fun pressGlobalAction(key: String?): String {
+    val action = when (key?.lowercase()) {
+      "back" -> GLOBAL_ACTION_BACK
+      "home" -> GLOBAL_ACTION_HOME
+      "recents" -> GLOBAL_ACTION_RECENTS
+      "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
+      "quick_settings" -> GLOBAL_ACTION_QUICK_SETTINGS
+      "power_dialog" -> GLOBAL_ACTION_POWER_DIALOG
+      "lock_screen" -> if (android.os.Build.VERSION.SDK_INT >= 28) GLOBAL_ACTION_LOCK_SCREEN else return "unsupported"
+      "headset_hook" -> if (android.os.Build.VERSION.SDK_INT >= 28) GLOBAL_ACTION_KEYCODE_HEADSETHOOK else return "unsupported"
+      "take_screenshot" -> if (android.os.Build.VERSION.SDK_INT >= 30) GLOBAL_ACTION_TAKE_SCREENSHOT else return "unsupported"
+      else -> return "unsupported_global_action"
+    }
+    return if (performGlobalAction(action)) "executed" else "failed"
   }
 
   private fun nodeAction(action: Map<String, Any?>): String {
