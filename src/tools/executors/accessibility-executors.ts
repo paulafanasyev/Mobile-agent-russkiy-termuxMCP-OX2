@@ -1,10 +1,39 @@
+import { requireNativeModule } from 'expo'
+import { Platform } from 'react-native'
 import {
-  getAccessibilityTree,
+  HANDS_MAX_TREE_NODES,
   isAccessibilityEnabled,
-  performAccessibilityAction,
   type AccessibilityNode,
 } from '@/modules/accessibility-agent'
 import { actionSchema } from '../accessibility-tools'
+
+type NativeAccessibilityAgent = {
+  getTree(maxNodes: number): Promise<AccessibilityNode[]>
+  perform(actionJson: string): Promise<{ status: string; action: string }>
+}
+
+const Native = Platform.OS === 'android'
+  ? requireNativeModule<NativeAccessibilityAgent>('AccessibilityAgent')
+  : null
+
+async function getAccessibilityTree(maxNodes = HANDS_MAX_TREE_NODES): Promise<AccessibilityNode[]> {
+  if (!Native) return []
+  return Native.getTree(Math.max(1, Math.min(maxNodes, HANDS_MAX_TREE_NODES)))
+}
+
+async function performAccessibilityAction(action: {
+  type: 'tap' | 'long_press' | 'swipe' | 'type' | 'back' | 'home' | 'recents'
+  x?: number
+  y?: number
+  x2?: number
+  y2?: number
+  durationMs?: number
+  text?: string
+  nodeId?: string
+}) {
+  if (!Native) return { status: 'unsupported_platform', action: action.type }
+  return Native.perform(JSON.stringify(action))
+}
 
 export async function executeUiObserve(maxNodes: number) {
   const enabled = await isAccessibilityEnabled()

@@ -18,8 +18,6 @@ export type AccessibilityNode = {
 
 type NativeAccessibilityAgent = {
   isEnabled(): Promise<boolean>
-  getTree(maxNodes: number): Promise<AccessibilityNode[]>
-  perform(actionJson: string): Promise<{ status: string; action: string }>
 }
 
 const Native = Platform.OS === 'android'
@@ -29,23 +27,4 @@ const Native = Platform.OS === 'android'
 export async function isAccessibilityEnabled(): Promise<boolean> {
   if (!Native) return false
   return Native.isEnabled()
-}
-
-export async function getAccessibilityTree(maxNodes = HANDS_MAX_TREE_NODES): Promise<AccessibilityNode[]> {
-  if (!Native) return []
-  return Native.getTree(Math.max(1, Math.min(maxNodes, HANDS_MAX_TREE_NODES)))
-}
-
-export async function performAccessibilityAction(action: {
-  type: 'tap' | 'long_press' | 'swipe' | 'type' | 'back' | 'home' | 'recents'
-  x?: number
-  y?: number
-  x2?: number
-  y2?: number
-  durationMs?: number
-  text?: string
-  nodeId?: string
-}) {
-  if (!Native) return { status: 'unsupported_platform', action: action.type }
-  return Native.perform(JSON.stringify(action))
 }

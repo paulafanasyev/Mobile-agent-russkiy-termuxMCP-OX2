@@ -62,7 +62,12 @@ export function createDeviceToolSet(): ToolSet {
     'device.ui.observe': tool({
       description: getContract('device.ui.observe').description,
       inputSchema: getContract('device.ui.observe').inputSchema,
-      execute: async (args) => executeUiObserve(args.maxNodes),
+      execute: async (args) => {
+        const decision = await requestDeviceToolApproval('device.ui.observe', args)
+        if (decision === 'abort') throw new Error('Request aborted.')
+        if (decision !== 'approve') return { status: 'needs_approval', nodes: [] }
+        return executeUiObserve(args.maxNodes)
+      },
     }),
     'device.ui.act': tool({
       description: getContract('device.ui.act').description,
