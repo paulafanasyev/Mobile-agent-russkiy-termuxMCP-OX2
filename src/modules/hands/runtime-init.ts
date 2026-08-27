@@ -1,9 +1,9 @@
 import { executeUiAction, executeUiObserve, executeFindNodes } from '../../tools/executors/accessibility-executors'
 import { executeOpenApp, openAppSchema } from '../../tools/executors/device-executors'
 import { executeOpenUrl, executeOpenSettings, executeHandsWait, executeHandsShare, openUrlHandsSchema, openSettingsHandsSchema, waitHandsSchema, shareHandsSchema } from '../../tools/executors/system-hands-executors'
-import { executeSetVolume, executeSetBrightness, executeToggleFlashlight, setVolumeHandsSchema, setBrightnessHandsSchema, toggleFlashlightHandsSchema } from '../../tools/executors/system-device-executors'
+import { executeSetVolume, executeSetBrightness, executeToggleFlashlight, setVolumeHandsSchema, setBrightnessHandsSchema, toggleFlashlightHandsSchema } from '../../tools/executors/system-device-hands-executors'
 import { executeSetAlarm, executeCreateCalendarEvent, executeCall, executeSendSms, executeSendMessage, alarmHandsSchema, calendarHandsSchema, callHandsSchema, smsHandsSchema, messageHandsSchema } from '../../tools/executors/telecom-calendar-hands-executors'
-import { executeHandsFileRead, executeHandsFileWrite, executeHandsFileMove, executeHandsFileDelete, executeHandsFileRename, fileReadHandsSchema, fileWriteHandsSchema, filePairHandsSchema, fileDeleteHandsSchema, fileRenameHandsSchema, executeHandsMedia, mediaHandsSchema } from '../../tools/executors/file-media-hands-executors'
+import { executeHandsFileRead, executeHandsFileWrite, executeHandsFileMove, executeHandsFileDelete, executeHandsFileRename, executeHandsScreenshot, fileReadHandsSchema, fileWriteHandsSchema, filePairHandsSchema, fileDeleteHandsSchema, fileRenameHandsSchema, executeHandsMedia } from '../../tools/executors/file-media-hands-executors'
 import { assertHandsExecutorsComplete, hasHandsExecutor, registerHandsExecutor } from './hands-executor-map'
 
 let initialized = false
@@ -60,9 +60,8 @@ export function initHandsExecutors(): void {
   register('android.media.play', async () => executeHandsMedia('play_media'))
   register('android.media.pause', async () => executeHandsMedia('pause_media'))
   register('android.media.next', async () => executeHandsMedia('next_media'))
-  // Explicit fail-closed adapters: these are registered so the runtime has no silent lookup gaps,
-  // but they cannot be promoted to implemented until native device evidence exists.
-  register('android.screenshot', unavailableNativeExecutor('screenshot'))
+  register('android.screenshot', async () => executeHandsScreenshot())
+  // These remain explicitly fail-closed until native device implementations exist.
   register('android.key', unavailableNativeExecutor('press_key'))
   register('android.camera', unavailableNativeExecutor('camera'))
   assertHandsExecutorsComplete()
