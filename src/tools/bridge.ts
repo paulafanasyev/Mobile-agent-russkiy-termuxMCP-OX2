@@ -14,11 +14,10 @@ import {
   openAppSchema,
   readFileSchema,
 } from './executors/device-executors'
-import {
-  executeUiAction,
-  executeUiObserve,
-} from './executors/accessibility-executors'
 import { requestDeviceToolApproval } from '@/modules/runtime/tool-approval'
+import { initHandsExecutors } from '@/modules/hands/runtime-init'
+import { resolveHandsExecutor } from '@/modules/hands/hands-executor-map'
+import type { HandsActionType } from '@/modules/hands/action-model'
 
 function getContract(id: string) {
   const contract = [...DEVICE_TOOLS, ...ACCESSIBILITY_TOOLS].find((item) => item.id === id)
@@ -26,7 +25,15 @@ function getContract(id: string) {
   return contract
 }
 
+function resolveAccessibilityActionType(type: string): HandsActionType {
+  if (type === 'type') return 'type_text'
+  if (type === 'long_press') return 'long_press'
+  if (type === 'tap' || type === 'double_tap' || type === 'swipe' || type === 'back' || type === 'home' || type === 'recents') return type
+  throw new Error(`Unsupported Hands accessibility action: ${type}`)
+}
+
 export function createDeviceToolSet(): ToolSet {
+  initHandsExecutors()
   return {
     'device.apps.list': tool({
       description: getContract('device.apps.list').description,
@@ -60,7 +67,8 @@ export function createDeviceToolSet(): ToolSet {
         const decision = await requestDeviceToolApproval('device.ui.observe', parsed)
         if (decision === 'abort') throw new Error('Request aborted.')
         if (decision !== 'approve') return { status: 'needs_approval', nodes: [] }
-        return executeUiObserve(parsed.maxNodes)
+        const { executor } = resolveHandsExecutor('read_screen')
+        return executor({ maxNodes: parsed.maxNodes }, { actionId: `observe-${Date.now()}` })
       },
     }),
     'device.ui.act': tool({
@@ -71,7 +79,13 @@ export function createDeviceToolSet(): ToolSet {
         const decision = await requestDeviceToolApproval('device.ui.act', parsed)
         if (decision === 'abort') throw new Error('Request aborted.')
         if (decision !== 'approve') return { status: 'needs_approval', verified: false }
-        return executeUiAction(parsed)
+        initHandsExecutors()
+        const actionType = resolveAccessibilityActionType(parsed.action.type)
+        const { capability, executor } = resolveHandsExecutor(actionType)
+        if (capability.availabilityStatus !== 'implemented') {
+          return { status: 'unavailable', verified: false, error: `Hands capability ${actionType} is ${capability.availabilityStatus}` }
+        }
+        return executor(parsed as unknown as Record<string, unknown>, { actionId: `ui-${Date.now()}` })
       },
     }),
   }
