@@ -13,7 +13,7 @@ class AccessibilityAgentModule : Module() {
     }
 
     AsyncFunction("getTree") { maxNodes: Int ->
-      OX2AccessibilityService.instance?.snapshot(maxNodes.coerceIn(1, 200))
+      OX2AccessibilityService.instance?.snapshot(maxNodes.coerceIn(1, HANDS_MAX_TREE_NODES))
         ?: emptyList<Map<String, Any?>>()
     }
 
@@ -47,7 +47,8 @@ class AccessibilityAgentModule : Module() {
       "back", "home", "recents" -> true
       "type" -> {
         val text = json.optString("text", "")
-        text.length <= 4096 && (json.optString("nodeId", "").isBlank() || NODE_ID.matches(json.optString("nodeId")))
+        val nodeId = json.optString("nodeId", "")
+        text.length <= HANDS_MAX_TEXT_LENGTH && NODE_ID.matches(nodeId)
       }
       "tap", "long_press" -> {
         val x = json.optDouble("x", Double.NaN)
@@ -72,6 +73,8 @@ class AccessibilityAgentModule : Module() {
   }
 
   companion object {
+    private const val HANDS_MAX_TREE_NODES = 200
+    private const val HANDS_MAX_TEXT_LENGTH = 4096
     private val SUPPORTED_ACTIONS = setOf("back", "home", "recents", "tap", "long_press", "swipe", "type")
     private val NODE_ID = Regex("^0(?:\\.[0-9]+)*$")
   }
