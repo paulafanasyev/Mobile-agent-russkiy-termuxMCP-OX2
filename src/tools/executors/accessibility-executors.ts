@@ -4,7 +4,7 @@ import {
   HANDS_MAX_TREE_NODES,
   isAccessibilityEnabled,
   type AccessibilityNode,
-} from '@/modules/accessibility-agent'
+} from '../../../../modules/accessibility-agent'
 import { actionSchema } from '../accessibility-tools'
 
 type NativeAccessibilityAgent = {
