@@ -11,12 +11,7 @@ export function createHandsVerifier(): HandsVerifier {
     verify(action, observation) {
       const expected = action.postconditions ?? [];
       if (expected.length === 0) {
-        return {
-          actionId: action.id,
-          status: 'failed',
-          observation,
-          error: 'Действие нельзя подтвердить: отсутствуют postconditions.',
-        };
+        return { actionId: action.id, status: 'failed', observation, error: 'Действие нельзя подтвердить: отсутствуют postconditions.' };
       }
       const haystack = observation.visibleText.map(normalize);
       const missing = expected.filter((condition) => {
@@ -24,14 +19,18 @@ export function createHandsVerifier(): HandsVerifier {
         return needle.length === 0 || !haystack.some((text) => text.includes(needle));
       });
       if (missing.length === 0) return { actionId: action.id, status: 'success', observation };
-      return {
-        actionId: action.id,
-        status: 'failed',
-        observation,
-        error: `Не подтверждено состояние после действия: ${missing.join(', ')}`,
-      };
+      return { actionId: action.id, status: 'failed', observation, error: `Не подтверждено состояние после действия: ${missing.join(', ')}` };
     },
   };
+}
+
+/** Strict boundary used by executors: unverified native execution can never become success. */
+export function normalizeExecutionResult(action: HandsAction, result: HandsStepResult): HandsStepResult {
+  if (result.status !== 'success') return result;
+  if (!(action.postconditions?.length)) {
+    return { ...result, status: 'failed', error: 'Нельзя объявить Hands-действие успешным без postcondition.' };
+  }
+  return result;
 }
 
 export function shouldReplan(result: HandsStepResult, action: HandsAction, attempt: number): boolean {
