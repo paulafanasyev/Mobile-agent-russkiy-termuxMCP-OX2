@@ -16,7 +16,7 @@ export const ACCESSIBILITY_TOOLS: ToolContractSpec<unknown, unknown>[] = [
     id: 'device.ui.observe',
     version: '1.0.0',
     description: 'Читает доступное Android UI-дерево текущего экрана для точного выбора элементов.',
-    inputSchema: z.object({ maxNodes: z.number().int().min(1).max(1000).default(250)),
+    inputSchema: z.object({ maxNodes: z.number().int().min(1).max(1000).default(250) }),
     outputSchema: z.any(),
     requiredCapability: 'NO_PRIVILEGE',
     risk: 'low',
