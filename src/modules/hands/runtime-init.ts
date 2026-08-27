@@ -17,7 +17,7 @@ type UiActInput = {
   waitMs?: number
   expectedText?: string
   expectedPackage?: string
-  verifyStrategy?: 'ui_tree_change' | 'ui_target_state'
+  verifyStrategy?: 'ui_tree_change' | 'ui_target_state' | 'system_state_change'
 }
 
 function uiExecutor(type: string, defaults: Pick<UiActInput, 'waitMs' | 'verifyStrategy'>) {
@@ -44,7 +44,13 @@ export function initHandsExecutors(): void {
   register('accessibility.double_tap', uiExecutor('double_tap', { waitMs: 500, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.long_press', uiExecutor('long_press', { waitMs: 500, verifyStrategy: 'ui_target_state' }))
   register('accessibility.swipe', uiExecutor('swipe', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
+  register('accessibility.scroll', uiExecutor('scroll', { waitMs: 800, verifyStrategy: 'ui_tree_change' }))
+  register('accessibility.drag', uiExecutor('drag', { waitMs: 1000, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.type_text', uiExecutor('type_text', { waitMs: 500, verifyStrategy: 'ui_target_state' }))
+  register('accessibility.clear_text', uiExecutor('clear_text', { waitMs: 800, verifyStrategy: 'ui_target_state' }))
+  register('accessibility.select_text', uiExecutor('select_text', { waitMs: 800, verifyStrategy: 'ui_target_state' }))
+  register('accessibility.copy', uiExecutor('copy', { waitMs: 500, verifyStrategy: 'system_state_change' }))
+  register('accessibility.paste', uiExecutor('paste', { waitMs: 500, verifyStrategy: 'ui_target_state' }))
   register('accessibility.back', uiExecutor('back', { waitMs: 500, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.home', uiExecutor('home', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.recents', uiExecutor('recents', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
@@ -59,7 +65,6 @@ export function initHandsExecutors(): void {
   register('accessibility.find_text', async (args) => executeFindNodes({ text: args.text }))
   register('accessibility.find_element', async (args) => executeFindNodes(args))
 
-  // Registered but deliberately remains stub in the authoritative registry until device evidence exists.
   register('android.intent.launch_app', async (args) => executeOpenApp(openAppSchema.parse(args)))
 
   assertHandsExecutorsComplete()
