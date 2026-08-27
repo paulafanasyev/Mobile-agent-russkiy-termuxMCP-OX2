@@ -84,6 +84,7 @@ class OX2AccessibilityService : AccessibilityService() {
     val text = action["text"] as? String ?: return "invalid_action"
     if (text.length > MAX_TEXT_LENGTH) return "text_too_long"
     val nodeId = action["nodeId"] as? String ?: return "invalid_node_target"
+    if (nodeId == "0") return "invalid_node_target"
     val node = findNode(nodeId) ?: return "invalid_node_target"
     return try {
       if (!node.isEditable || !node.isEnabled) "target_not_editable"
@@ -98,23 +99,31 @@ class OX2AccessibilityService : AccessibilityService() {
   }
 
   private fun findNode(id: String): AccessibilityNodeInfo? {
-    if (!NODE_ID.matches(id)) return null
+    if (!NODE_ID.matches(id) || id == "0") return null
     val root = rootInActiveWindow ?: return null
     val parts = id.split('.')
     var current: AccessibilityNodeInfo = root
-    var transferred = false
     try {
       for (part in parts.drop(1)) {
-        val index = part.toIntOrNull() ?: return null
-        if (index < 0 || index >= current.childCount) return null
-        val next = current.getChild(index) ?: return null
+        val index = part.toIntOrNull() ?: run {
+          current.recycle()
+          return null
+        }
+        if (index < 0 || index >= current.childCount) {
+          current.recycle()
+          return null
+        }
+        val next = current.getChild(index) ?: run {
+          current.recycle()
+          return null
+        }
         current.recycle()
         current = next
       }
-      transferred = true
       return current
-    } finally {
-      if (!transferred) current.recycle()
+    } catch (error: RuntimeException) {
+      current.recycle()
+      throw error
     }
   }
 
@@ -148,7 +157,7 @@ class OX2AccessibilityService : AccessibilityService() {
   companion object {
     private const val MAX_TREE_NODES = 200
     private const val MAX_TEXT_LENGTH = 4096
-    private val NODE_ID = Regex("^0(?:\\.[0-9]+)*$")
+    private val NODE_ID = Regex("^0(?:\\.[0-9]+)+$")
 
     @Volatile
     internal var instance: OX2AccessibilityService? = null
