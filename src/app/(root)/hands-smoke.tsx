@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import { wrapToolsWithApproval } from "@/modules/runtime/tool-approval";
 import { createDeviceToolSet, isDeviceAppApproved } from "@/tools/bridge";
@@ -9,6 +9,7 @@ type SmokeStatus = "idle" | "running" | "pass" | "fail";
 export default function HandsSmokeScreen() {
   const [status, setStatus] = useState<SmokeStatus>("idle");
   const [evidence, setEvidence] = useState<string[]>([]);
+  const [actionExecuted, setActionExecuted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,41 +25,67 @@ export default function HandsSmokeScreen() {
         log("HANDS_SMOKE_START");
 
         const deviceTools = createDeviceToolSet();
-        if (!deviceTools["device.open_app"]?.execute) {
-          throw new Error("device.open_app is not executable");
-        }
-        log("HANDS_TOOLSET_CREATED");
-
         const wrapped = wrapToolsWithApproval(deviceTools, {
           mode: "auto",
           requestApproval: async () => "approve",
         });
+        log("HANDS_TOOLSET_CREATED");
         log("HANDS_APPROVAL_HANDLER_SET");
 
-        const openAppTool = wrapped["device.open_app"];
-        if (!openAppTool?.execute) {
-          throw new Error("wrapped device.open_app is not executable");
+        const observe = wrapped["device.ui.observe"];
+        const act = wrapped["device.ui.act"];
+        if (!observe?.execute || !act?.execute) {
+          throw new Error("Accessibility Hands tools are not executable");
         }
 
-        const result = await openAppTool.execute(
-          { packageName: "com.android.settings" },
-          { toolCallId: "hands-smoke", messages: [], context: {} },
+        // The native service must provide a real UI tree. No mock/fallback is accepted.
+        const observed = await observe.execute(
+          { maxNodes: 200 },
+          { toolCallId: "hands-observe", messages: [], context: {} },
         );
+        log(`HANDS_UI_OBSERVE_RESULT status=${String(observed?.status)} nodes=${String(observed?.nodes?.length ?? 0)}`);
+        if (observed?.status !== "observed" || !observed.nodes?.some((n: any) => n.text === "HANDS_REAL_ACTION_TARGET" && n.clickable)) {
+          throw new Error("Real accessibility UI target was not observed");
+        }
 
-        log(`HANDS_OPEN_APP_RESULT status=${String(result?.status)}`);
+        const target = observed.nodes.find((n: any) => n.text === "HANDS_REAL_ACTION_TARGET" && n.clickable);
+        if (!target) throw new Error("Clickable Hands target missing");
+        const bounds = target.bounds;
+        const x = (bounds.left + bounds.right) / 2;
+        const y = (bounds.top + bounds.bottom) / 2;
 
+        const result = await act.execute(
+          {
+            action: { type: "tap", x, y },
+            waitMs: 500,
+            expectedText: "HANDS_ACTION_EXECUTED",
+          },
+          { toolCallId: "hands-act", messages: [], context: {} },
+        );
+        log(`HANDS_UI_ACT_RESULT status=${String(result?.status)} verified=${String(result?.verified)}`);
+        if (result?.status !== "verified" || result?.verified !== true) {
+          throw new Error(`Real accessibility tap was not causally verified: ${JSON.stringify(result)}`);
+        }
+
+        log("PASS:REAL_ACCESSIBILITY_TAP_VERIFIED");
+
+        const openAppTool = wrapped["device.open_app"];
+        if (!openAppTool?.execute) throw new Error("device.open_app is not executable");
+        const openResult = await openAppTool.execute(
+          { packageName: "com.android.settings" },
+          { toolCallId: "hands-open-app", messages: [], context: {} },
+        );
+        log(`HANDS_OPEN_APP_RESULT status=${String(openResult?.status)}`);
         const approved = isDeviceAppApproved("com.android.settings");
         log(`HANDS_SESSION_APPROVED=${String(approved)} package=com.android.settings`);
-
         if (
-          result?.status !== "launched_verified" ||
-          result?.packageName !== "com.android.settings" ||
-          result?.verified !== true ||
+          openResult?.status !== "launched_verified" ||
+          openResult?.packageName !== "com.android.settings" ||
+          openResult?.verified !== true ||
           !approved
         ) {
-          throw new Error(`Unexpected Hands result/approval: ${JSON.stringify(result)}`);
+          throw new Error(`Unexpected open-app result/approval: ${JSON.stringify(openResult)}`);
         }
-
         log("HANDS_NATIVE_INTENT_REQUESTED package=com.android.settings");
         log("PASS:DEVICE_OPEN_APP_LAUNCHED_VERIFIED");
 
@@ -83,16 +110,18 @@ export default function HandsSmokeScreen() {
   }, []);
 
   return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-        padding: 24,
-      }}
-    >
+    <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24, gap: 16 }}>
       <Text>OX2 Hands Smoke</Text>
       <Text>Status: {status}</Text>
+      <Pressable
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel="HANDS_REAL_ACTION_TARGET"
+        onPress={() => setActionExecuted(true)}
+        style={{ padding: 24, borderWidth: 2, borderRadius: 12 }}
+      >
+        <Text>{actionExecuted ? "HANDS_ACTION_EXECUTED" : "HANDS_REAL_ACTION_TARGET"}</Text>
+      </Pressable>
       {evidence.map((line, index) => (
         <Text key={`${index}-${line}`}>{line}</Text>
       ))}
