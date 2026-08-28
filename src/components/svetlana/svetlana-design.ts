@@ -2,7 +2,7 @@ export const SVETLANA_DESIGN = {
   version: "2026-08-28-approved",
   primaryFace: "realistic-photo",
   assetPath: "assets/images/svetlana-approved.jpg",
-  assetSha256: "b55dd099a0fdea48810986f2a1fec2db557b0430d6906dea8dce263864b3dc63",
+  assetSha256: "fed3d8d1405d291c7faba43d523d37e94187cf72809fc9ea948ac9dd7cba2d52",
   defaultTheme: "light",
   themes: ["light", "dark"],
   fullSize: 180,
