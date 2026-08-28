@@ -7,7 +7,7 @@ export const SVETLANA_DESIGN = {
   themes: ["light", "dark"],
   fullSize: 180,
   compactSize: 80,
-  orbStates: ["idle", "listening", "thinking", "speaking", "warning", "joy"],
+  orbStates: ["idle", "listening", "thinking", "speaking", "error"],
   mouthLayerId: "svetlanaMouth",
   lipSync: "viseme",
 } as const;
