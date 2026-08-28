@@ -12,16 +12,15 @@ import android.view.KeyEvent
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts
 import expo.modules.kotlin.Promise
+import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 
 class SystemHandsModule : Module() {
-  private var cameraLauncher: ActivityResultLauncher<Uri>? = null
+  private var cameraLauncher: AppContextActivityResultLauncher<CameraCaptureContractOptions, Boolean>? = null
   private var pendingCameraUri: Uri? = null
   private var pendingCameraPromise: Promise? = null
 
@@ -29,7 +28,9 @@ class SystemHandsModule : Module() {
     Name("SystemHands")
 
     RegisterActivityContracts {
-      cameraLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+      cameraLauncher = registerForActivityResult(
+        CameraCaptureContract(this@SystemHandsModule)
+      ) { _, success ->
         val context = appContext.reactContext
         val uri = pendingCameraUri
         val promise = pendingCameraPromise
@@ -83,9 +84,31 @@ class SystemHandsModule : Module() {
       val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "hands-${System.currentTimeMillis()}.jpg"); put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/OX2"); put(MediaStore.Images.Media.IS_PENDING, 1) }
       val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@AsyncFunction promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "reason" to "MediaStore insert failed"))
       pendingCameraUri = uri; pendingCameraPromise = promise
-      val activity = appContext.activityProvider?.currentActivity
-      if (activity == null) { pendingCameraUri = null; pendingCameraPromise = null; context.contentResolver.delete(uri, null, null); return@AsyncFunction promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "reason" to "Activity unavailable")) }
-      activity.runOnUiThread { cameraLauncher?.launch(uri) ?: run { pendingCameraUri = null; pendingCameraPromise = null; context.contentResolver.delete(uri, null, null); promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "reason" to "Camera launcher unavailable")) } }
+      cameraLauncher?.launch(CameraCaptureContractOptions(uri.toString())) { success ->
+        val callbackContext = appContext.reactContext
+        val callbackUri = pendingCameraUri
+        val callbackPromise = pendingCameraPromise
+        pendingCameraUri = null
+        pendingCameraPromise = null
+        if (callbackContext == null || callbackUri == null || callbackPromise == null) return@launch
+        try {
+          if (!success) {
+            callbackContext.contentResolver.delete(callbackUri, null, null)
+            callbackPromise.resolve(mapOf("status" to "camera_cancelled", "verified" to false, "uri" to callbackUri.toString()))
+            return@launch
+          }
+          if (Build.VERSION.SDK_INT >= 29) {
+            val pendingValues = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+            callbackContext.contentResolver.update(callbackUri, pendingValues, null, null)
+          }
+          val size = callbackContext.contentResolver.openFileDescriptor(callbackUri, "r")?.use { it.statSize } ?: -1L
+          callbackPromise.resolve(if (size > 0L) mapOf("status" to "camera_verified", "verified" to true, "uri" to callbackUri.toString(), "sizeBytes" to size) else mapOf("status" to "camera_unverified", "verified" to false, "uri" to callbackUri.toString(), "sizeBytes" to size))
+        } catch (t: Throwable) {
+          callbackPromise.resolve(mapOf("status" to "camera_failed", "verified" to false, "uri" to callbackUri.toString(), "reason" to (t.message ?: t.javaClass.simpleName)))
+        }
+      } ?: run {
+        pendingCameraUri = null; pendingCameraPromise = null; context.contentResolver.delete(uri, null, null); promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "reason" to "Camera launcher unavailable"))
+      }
     }
 
     AsyncFunction("sendMediaBroadcast") { action: String, keyCode: Int ->
@@ -104,7 +127,7 @@ class SystemHandsModule : Module() {
     }
     AsyncFunction("writeContent") { uriString: String, content: String, append: Boolean ->
       val context = appContext.reactContext ?: error("Android context unavailable"); val uri=Uri.parse(uriString); if(uri.scheme!="content") return@AsyncFunction mapOf("status" to "unsupported_uri", "verified" to false)
-      try { val existing=if(append) context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0) else ByteArray(0); context.contentResolver.openOutputStream(uri,"wt")?.use { it.write(existing); it.write(content.toByteArray(StandardCharsets.UTF_8)) } ?: return@AsyncFunction mapOf("status" to "write_failed", "verified" to false); val after=context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0); val expected=existing + content.toByteArray(StandardCharsets.UTF_8); mapOf("status" to if(after.contentEquals(expected)) "write_verified" else "write_unverified", "verified" to after.contentEquals(expected), "sizeBytes" to after.size) } catch (t: Throwable) { mapOf("status" to "write_failed", "verified" to false, "reason" to (t.message ?: t.javaClass.simpleName)) }
+      try { val existing=if(append) context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0) else ByteArray(0); context.contentResolver.openOutputStream(uri,"wt")?.use { it.write(existing); it.write(content.toByteArray(StandardCharsets.UTF_8)) } ?: return@AsyncFunction mapOf("status" to "write_failed", "verified" to false); val after=context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0); val expected=existing + content.toByteArray(StandardCharsets.UTF_8); mapOf("status" to if(after.contentEquals(expected)) "write_verified" else "write_unverified", "verified" to after.contentEquals(expected), "sizeBytes" to after.size) } catch (t: Throwable) { mapOf("status" to "write_failed", "verified" to false, "reason" to (t.message ?: t.javaClass.simpleName))) }
     }
     AsyncFunction("deleteContent") { uriString: String ->
       val context=appContext.reactContext ?: error("Android context unavailable"); val uri=Uri.parse(uriString); if(uri.scheme!="content") return@AsyncFunction mapOf("status" to "unsupported_uri", "verified" to false)
