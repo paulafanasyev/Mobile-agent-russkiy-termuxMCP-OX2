@@ -64,7 +64,7 @@ class SystemHandsModule : Module() {
       val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "hands-${System.currentTimeMillis()}.jpg"); put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/OX2"); put(MediaStore.Images.Media.IS_PENDING, 1) }
       val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@AsyncFunction promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "reason" to "MediaStore insert failed"))
       pendingCameraUri = uri; pendingCameraPromise = promise
-      cameraLauncher?.launch(CameraCaptureContractOptions(uri.toString())) { success -> resolveCameraResult(success) } ?: run {
+      cameraLauncher?.launch(CameraCaptureContractOptions(uri.toString())) ?: run {
         pendingCameraUri = null; pendingCameraPromise = null; context.contentResolver.delete(uri, null, null); promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "reason" to "Camera launcher unavailable"))
       }
     }
