@@ -1,0 +1,10 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+android {
+  namespace 'expo.modules.localai'
+}
+
+dependencies {
+  implementation 'com.microsoft.cognitiveservices.speech:client-sdk:1.51.0'
+}
