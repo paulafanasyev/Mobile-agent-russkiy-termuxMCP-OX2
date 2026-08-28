@@ -13,66 +13,17 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
 import androidx.activity.result.ActivityResultCallback
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
-import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
 
 class SystemHandsModule : Module() {
   private var cameraLauncher: AppContextActivityResultLauncher<CameraCaptureContractOptions, Boolean>? = null
-
-  private suspend fun captureCamera(): Map<String, Any> {
-    val context = appContext.reactContext ?: return mapOf("status" to "camera_failed", "verified" to false, "reason" to "Android context unavailable")
-    if (Build.VERSION.SDK_INT < 29) return mapOf("status" to "unsupported_android_version", "verified" to false, "minimumApi" to 29)
-
-    val values = ContentValues().apply {
-      put(MediaStore.Images.Media.DISPLAY_NAME, "hands-${System.currentTimeMillis()}.jpg")
-      put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-      put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/OX2")
-      put(MediaStore.Images.Media.IS_PENDING, 1)
-    }
-    val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-      ?: return mapOf("status" to "camera_failed", "verified" to false, "reason" to "MediaStore insert failed")
-
-    val launcher = cameraLauncher ?: run {
-      context.contentResolver.delete(uri, null, null)
-      return mapOf("status" to "camera_failed", "verified" to false, "reason" to "Camera launcher unavailable")
-    }
-
-    try {
-      val success = suspendCancellableCoroutine<Boolean> { continuation ->
-        launcher.launch(
-          CameraCaptureContractOptions(uri.toString()),
-          ActivityResultCallback { result ->
-            if (continuation.isActive) continuation.resume(result)
-          }
-        )
-        continuation.invokeOnCancellation {
-          context.contentResolver.delete(uri, null, null)
-        }
-      }
-      if (!success) {
-        context.contentResolver.delete(uri, null, null)
-        return mapOf("status" to "camera_cancelled", "verified" to false, "uri" to uri.toString())
-      }
-
-      val valuesComplete = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
-      context.contentResolver.update(uri, valuesComplete, null, null)
-      val size = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-      if (size > 0L) {
-        mapOf("status" to "camera_verified", "verified" to true, "uri" to uri.toString(), "sizeBytes" to size)
-      } else {
-        mapOf("status" to "camera_unverified", "verified" to false, "uri" to uri.toString(), "sizeBytes" to size)
-      }
-    } catch (t: Throwable) {
-      context.contentResolver.delete(uri, null, null)
-      mapOf("status" to "camera_failed", "verified" to false, "uri" to uri.toString(), "reason" to (t.message ?: t.javaClass.simpleName))
-    }
-  }
+  private var pendingCameraUri: Uri? = null
+  private var pendingCameraPromise: Promise? = null
 
   override fun definition() = ModuleDefinition {
     Name("SystemHands")
@@ -80,7 +31,9 @@ class SystemHandsModule : Module() {
     RegisterActivityContracts {
       cameraLauncher = registerForActivityResult(
         CameraCaptureContract(this@SystemHandsModule)
-      ) { _, _ -> }
+      ) { _, success ->
+        resolveCameraResult(success)
+      }
     }
 
     AsyncFunction("setVolume") { stream: Int, level: Int ->
@@ -105,7 +58,51 @@ class SystemHandsModule : Module() {
       try { camera.setTorchMode(cameraId, enabled); mapOf("status" to "changed", "enabled" to enabled) } catch (_: SecurityException) { mapOf("status" to "permission_required", "enabled" to enabled) }
     }
 
-    AsyncFunction("captureCamera") Coroutine ::captureCamera
+    AsyncFunction("captureCamera") { promise: Promise ->
+      val context = appContext.reactContext ?: run {
+        promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "reason" to "Android context unavailable"))
+        return@AsyncFunction
+      }
+      if (Build.VERSION.SDK_INT < 29) {
+        promise.resolve(mapOf("status" to "unsupported_android_version", "verified" to false, "minimumApi" to 29))
+        return@AsyncFunction
+      }
+      if (pendingCameraPromise != null) {
+        promise.resolve(mapOf("status" to "camera_busy", "verified" to false))
+        return@AsyncFunction
+      }
+
+      val values = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, "hands-${System.currentTimeMillis()}.jpg")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/OX2")
+        put(MediaStore.Images.Media.IS_PENDING, 1)
+      }
+      val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: run {
+        promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "reason" to "MediaStore insert failed"))
+        return@AsyncFunction
+      }
+
+      val launcher = cameraLauncher ?: run {
+        context.contentResolver.delete(uri, null, null)
+        promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "reason" to "Camera launcher unavailable"))
+        return@AsyncFunction
+      }
+
+      pendingCameraUri = uri
+      pendingCameraPromise = promise
+      try {
+        launcher.launch(
+          CameraCaptureContractOptions(uri.toString()),
+          ActivityResultCallback { result -> resolveCameraResult(result) }
+        )
+      } catch (t: Throwable) {
+        pendingCameraUri = null
+        pendingCameraPromise = null
+        context.contentResolver.delete(uri, null, null)
+        promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "uri" to uri.toString(), "reason" to (t.message ?: t.javaClass.simpleName)))
+      }
+    }
 
     AsyncFunction("sendMediaBroadcast") { action: String, keyCode: Int ->
       val context = appContext.reactContext ?: error("Android context unavailable")
@@ -136,6 +133,29 @@ class SystemHandsModule : Module() {
       val context=appContext.reactContext ?: error("Android context unavailable"); val source=Uri.parse(sourceUriString); val targetParent=Uri.parse(targetParentUriString)
       if(source.scheme!="content" || targetParent.scheme!="content") return@AsyncFunction mapOf("status" to "unsupported_uri", "verified" to false)
       try { val copied=DocumentsContract.copyDocument(context.contentResolver,source,targetParent) ?: return@AsyncFunction mapOf("status" to "move_failed", "verified" to false); val deleted=DocumentsContract.deleteDocument(context.contentResolver,source); mapOf("status" to if(deleted) "move_verified" else "move_unverified", "verified" to deleted, "destinationUri" to copied.toString()) } catch (_: Throwable) { mapOf("status" to "move_failed", "verified" to false) }
+    }
+  }
+
+  private fun resolveCameraResult(success: Boolean) {
+    val context = appContext.reactContext
+    val uri = pendingCameraUri
+    val promise = pendingCameraPromise
+    pendingCameraUri = null
+    pendingCameraPromise = null
+    if (context == null || uri == null || promise == null) return
+    try {
+      if (!success) {
+        context.contentResolver.delete(uri, null, null)
+        promise.resolve(mapOf("status" to "camera_cancelled", "verified" to false, "uri" to uri.toString()))
+        return
+      }
+      val valuesComplete = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+      context.contentResolver.update(uri, valuesComplete, null, null)
+      val size = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+      promise.resolve(if (size > 0L) mapOf("status" to "camera_verified", "verified" to true, "uri" to uri.toString(), "sizeBytes" to size) else mapOf("status" to "camera_unverified", "verified" to false, "uri" to uri.toString(), "sizeBytes" to size))
+    } catch (t: Throwable) {
+      context.contentResolver.delete(uri, null, null)
+      promise.resolve(mapOf("status" to "camera_failed", "verified" to false, "uri" to uri.toString(), "reason" to (t.message ?: t.javaClass.simpleName)))
     }
   }
 }
