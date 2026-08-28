@@ -16,8 +16,6 @@ import { requireNativeModule } from 'expo';
 import { z } from 'zod';
 import { isAppApprovedForSession, getSessionApprovedPackages } from '../device-tools';
 
-// Android package names: each component must start with a letter and contain
-// only letters, digits or underscores. Reject empty components such as com..evil.
 const packageNamePattern = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/i;
 
 export const openAppSchema = z.object({
@@ -61,7 +59,7 @@ async function getForegroundPackage(): Promise<string | null> {
   }
 }
 
-async function waitForForegroundPackage(packageName: string, timeoutMs = 2000): Promise<boolean> {
+async function waitForForegroundPackage(packageName: string, timeoutMs = 3000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   do {
     if (await getForegroundPackage() === packageName) return true;
@@ -71,7 +69,7 @@ async function waitForForegroundPackage(packageName: string, timeoutMs = 2000): 
   return false;
 }
 
-/** device.open_app — launch only after explicit session approval and verify foreground transition. */
+/** device.open_app — launch only after explicit session approval and verify foreground postcondition. */
 export async function executeOpenApp(
   args: z.infer<typeof openAppSchema>,
 ): Promise<{ status: string; packageName: string; verified: boolean }> {
@@ -79,16 +77,15 @@ export async function executeOpenApp(
     return { status: 'needs_approval', packageName: args.packageName, verified: false };
   }
 
-  const beforePackage = await getForegroundPackage();
-
   try {
     await IntentLauncher.openApplication(args.packageName);
   } catch {
     return { status: 'launch_failed', packageName: args.packageName, verified: false };
   }
 
-  const transitioned = beforePackage !== args.packageName;
-  const verified = transitioned && await waitForForegroundPackage(args.packageName);
+  // A successful request must be verified by the observable foreground state.
+  // Re-opening an already focused app is still valid; do not require a transition.
+  const verified = await waitForForegroundPackage(args.packageName);
 
   return {
     status: verified ? 'launched_verified' : 'launched_unverified',
