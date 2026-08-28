@@ -27,14 +27,14 @@ export async function executeOpenUrl(args: z.infer<typeof openUrlHandsSchema>) {
   const supported = await Linking.canOpenURL(parsed.url)
   if (!supported) return { status: 'unsupported_url', url: parsed.url, verified: false }
   await Linking.openURL(parsed.url)
-  return { status: 'intent_launched', url: parsed.url, verified: true }
+  return { status: 'intent_launched', url: parsed.url, verified: false }
 }
 
 export async function executeOpenSettings(args: z.infer<typeof openSettingsHandsSchema>) {
   if (Platform.OS !== 'android') return { status: 'unsupported_platform', verified: false }
   const action = args.action ?? 'android.settings.SETTINGS'
   await IntentLauncher.startActivityAsync(action)
-  return { status: 'intent_launched', action, verified: true }
+  return { status: 'intent_launched', action, verified: false }
 }
 
 export async function executeHandsWait(args: z.infer<typeof waitHandsSchema>) {
