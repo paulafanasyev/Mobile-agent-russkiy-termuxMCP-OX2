@@ -48,40 +48,59 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          : "${ANDROID_HOME:?ANDROID_HOME отсутствует}"
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          : "${ANDROID_HOME:?ANDROID_HOME missing}"
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
-          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/28.0.13004108"
-          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
-          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.0.13004108" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.0.13004108" >> "$GITHUB_ENV"
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/aapt2"
+          test -x "$ANDROID_HOME/ndk/28.0.13004108/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
           java -version
           go version
           sdkmanager --version
-          test -f "$ANDROID_HOME/platforms/android-21/android.jar"
-          test -f "$ANDROID_HOME/platforms/android-23/android.jar"
-          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
-          test -x "$ANDROID_HOME/build-tools/35.0.0/aapt2"
-          test -x "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+
+      - name: Install dependencies (frozen)
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify lockfile unchanged
+        run: test -z "$(git diff --name-only -- pnpm-lock.yaml)"
+
+      - name: TypeScript compile
+        run: pnpm exec tsc --noEmit
 
       - name: Build reproducible libbox.aar
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/logs"
+          mkdir -p "$RUNNER_TEMP/logs" "$RUNNER_TEMP/libbox"
           bash scripts/build-libbox-android.sh 2>&1 | tee "$RUNNER_TEMP/logs/libbox-build.log"
-
-      - name: Verify libbox artifact
-        shell: bash
-        run: |
-          set -euo pipefail
           test -s build/native/libbox.aar
           test -s build/native/libbox.aar.sha256
           test -s build/native/sing-box-revision.txt
           sha256sum -c build/native/libbox.aar.sha256
           test "$(cat build/native/sing-box-revision.txt)" = "670d7a7693918b765a17c44aee5afb5d47ead390"
           unzip -t build/native/libbox.aar >/dev/null
+          cp build/native/libbox.aar "$RUNNER_TEMP/libbox/libbox.aar"
+          cp build/native/libbox.aar.sha256 "$RUNNER_TEMP/libbox/libbox.aar.sha256"
+          cp build/native/sing-box-revision.txt "$RUNNER_TEMP/libbox/sing-box-revision.txt"
+
+      - name: Expo prebuild
+        run: pnpm exec expo prebuild --platform android --clean
+
+      - name: Verify dependency manifests unchanged
+        run: git diff --exit-code -- package.json pnpm-lock.yaml
+
+      - name: Restore libbox after prebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/native
+          cp "$RUNNER_TEMP/libbox/libbox.aar" build/native/libbox.aar
+          cp "$RUNNER_TEMP/libbox/libbox.aar.sha256" build/native/libbox.aar.sha256
+          cp "$RUNNER_TEMP/libbox/sing-box-revision.txt" build/native/sing-box-revision.txt
+          test -s build/native/libbox.aar
+          sha256sum -c build/native/libbox.aar.sha256
 
       - name: Prepare local Maven libbox
         shell: bash
@@ -92,9 +111,7 @@ jobs:
           cp build/native/libbox.aar "$MAVEN_DIR/libbox-1.0.0.aar"
           cat > "$MAVEN_DIR/libbox-1.0.0.pom" <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
-          <project xmlns="http://maven.apache.org/POM/4.0.0"
-                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
             <modelVersion>4.0.0</modelVersion>
             <groupId>ru.mirsamozanyatykh</groupId>
             <artifactId>libbox</artifactId>
@@ -104,21 +121,6 @@ jobs:
           EOF
           test -s "$MAVEN_DIR/libbox-1.0.0.aar"
           test -s "$MAVEN_DIR/libbox-1.0.0.pom"
-
-      - name: Install dependencies (frozen)
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify lockfile unchanged
-        run: git diff --exit-code -- pnpm-lock.yaml
-
-      - name: TypeScript compile
-        run: pnpm exec tsc --noEmit
-
-      - name: Expo prebuild
-        run: pnpm exec expo prebuild --platform android --clean
-
-      - name: Verify dependency manifests unchanged
-        run: git diff --exit-code -- package.json pnpm-lock.yaml
 
       - name: Configure Android SDK path
         shell: bash
@@ -133,6 +135,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -R "ru.mirsamozanyatykh:libbox:1.0.0" app/build.gradle
+          test -s ../build/native/libbox.aar
           test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
 
       - name: Kotlin compile
