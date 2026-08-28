@@ -3,7 +3,8 @@
   "android": {
     "modules": [
       "expo.modules.localai.LocalAiModule",
-      "expo.modules.localai.VoiceModule"
+      "expo.modules.localai.VoiceModule",
+      "expo.modules.localai.AzureVisemeModule"
     ]
   }
 }
