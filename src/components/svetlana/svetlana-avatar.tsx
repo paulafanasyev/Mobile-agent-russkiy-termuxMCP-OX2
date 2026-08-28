@@ -1,7 +1,6 @@
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, Pressable, StyleSheet, View, useColorScheme } from "react-native";
-import { Mic } from "lucide-react-native";
 import { shapeForViseme } from "./viseme-timeline";
 import { SVETLANA_DESIGN, SvetlanaOrbState } from "./svetlana-design";
 
@@ -72,6 +71,7 @@ export function SvetlanaAvatar({
 
   const orb = ORB[resolvedState];
   const background = scheme === "dark" ? "#17111f" : "#faf8f5";
+  const border = scheme === "dark" ? "#31223f" : "#e8e3dc";
 
   return (
     <Pressable
@@ -80,7 +80,7 @@ export function SvetlanaAvatar({
       style={({ pressed }) => [styles.button, { width: size, height: size }, pressed && styles.pressed]}
     >
       <Animated.View pointerEvents="none" style={[styles.orb, { width: size, height: size, borderColor: orb, shadowColor: orb, transform: [{ scale: orbPulse }] }]} />
-      <View style={[styles.faceFrame, { width: size - 8, height: size - 8, backgroundColor: background }]}>
+      <View style={[styles.faceFrame, { width: size - 8, height: size - 8, backgroundColor: background, borderColor: border }]}>
         <Image
           source={require("../../../assets/images/svetlana-approved.jpg")}
           accessibilityLabel="Утверждённый портрет Светланы"
@@ -98,9 +98,6 @@ export function SvetlanaAvatar({
           }]}
         />
       </View>
-      <View style={[styles.micBadge, { backgroundColor: orb, borderColor: background }]}>
-        <Mic color="#ffffff" size={compact ? 13 : 16} strokeWidth={2.5} />
-      </View>
     </Pressable>
   );
 }
@@ -108,9 +105,8 @@ export function SvetlanaAvatar({
 const styles = StyleSheet.create({
   button: { alignItems: "center", justifyContent: "center", borderRadius: 999 },
   orb: { position: "absolute", borderWidth: 2, borderRadius: 999, shadowOpacity: 0.38, shadowRadius: 16, elevation: 8 },
-  faceFrame: { alignItems: "center", justifyContent: "center", borderRadius: 999, overflow: "hidden" },
+  faceFrame: { alignItems: "center", justifyContent: "center", borderRadius: 999, overflow: "hidden", borderWidth: 1 },
   portrait: { borderRadius: 999 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
   mouth: { position: "absolute", left: "50%", top: "51%", height: 5, backgroundColor: "#8f4f5d", marginLeft: -6.5, marginTop: -2.5 },
-  micBadge: { position: "absolute", right: 0, bottom: 0, width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2 },
 });
