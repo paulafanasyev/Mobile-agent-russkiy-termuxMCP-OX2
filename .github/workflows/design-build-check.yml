@@ -9,7 +9,7 @@ on:
 jobs:
   build-check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -129,6 +129,24 @@ jobs:
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
           test -s android/local.properties
 
+      - name: Configure offline local libbox repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/ox2-local-maven.init.gradle" <<'EOF'
+          settingsEvaluated { settings ->
+            settings.dependencyResolutionManagement.repositories.maven {
+              url = uri(System.getenv('GITHUB_WORKSPACE') + '/build/native/maven')
+            }
+          }
+          allprojects {
+            repositories.maven {
+              url = uri(System.getenv('GITHUB_WORKSPACE') + '/build/native/maven')
+            }
+          }
+          EOF
+          test -s "$RUNNER_TEMP/ox2-local-maven.init.gradle"
+
       - name: Verify generated Gradle and libbox
         working-directory: android
         shell: bash
@@ -144,14 +162,14 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/logs"
-          ./gradlew :expo:compileDebugKotlin --stacktrace --warning-mode all --console=plain 2>&1 | tee "$RUNNER_TEMP/logs/kotlin-compile.log"
+          ./gradlew --init-script "$RUNNER_TEMP/ox2-local-maven.init.gradle" :expo:compileDebugKotlin --stacktrace --warning-mode all --console=plain 2>&1 | tee "$RUNNER_TEMP/logs/kotlin-compile.log"
 
       - name: Full Android assemble with full deprecation audit
         working-directory: android
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew assembleDebug --stacktrace --warning-mode all --console=plain 2>&1 | tee "$RUNNER_TEMP/logs/assemble-debug.log"
+          ./gradlew --init-script "$RUNNER_TEMP/ox2-local-maven.init.gradle" assembleDebug --stacktrace --warning-mode all --console=plain 2>&1 | tee "$RUNNER_TEMP/logs/assemble-debug.log"
 
       - name: Verify APK and generate release evidence
         shell: bash
@@ -163,11 +181,7 @@ jobs:
           cp "$APK" "$RUNNER_TEMP/apk-evidence/ox2-debug.apk"
           sha256sum "$APK" | tee "$RUNNER_TEMP/apk-evidence/ox2-debug.apk.sha256"
           printf 'commit=%s\nrun_id=%s\nref=%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_REF_NAME" > "$RUNNER_TEMP/apk-evidence/build-metadata.txt"
-          if command -v aapt2 >/dev/null 2>&1; then
-            aapt2 dump badging "$APK" | tee "$RUNNER_TEMP/apk-evidence/aapt2-badging.txt"
-          else
-            "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | tee "$RUNNER_TEMP/apk-evidence/aapt2-badging.txt"
-          fi
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | tee "$RUNNER_TEMP/apk-evidence/aapt2-badging.txt"
 
       - name: Upload APK evidence
         if: ${{ success() }}
@@ -211,16 +225,6 @@ jobs:
             echo
             echo "## Deprecation warnings"
             grep -R -n -E 'deprecated|Deprecation|WARNING' "$RUNNER_TEMP/logs" 2>/dev/null | head -120 || true
-            echo
-            echo "## Environment (non-secret)"
-            java -version 2>&1 || true
-            node --version 2>&1 || true
-            pnpm --version 2>&1 || true
-            go version 2>&1 || true
-            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version 2>&1 || true
-            echo
-            echo "## Git state"
-            git status --short
           } > "$REPORT"
           cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
 
