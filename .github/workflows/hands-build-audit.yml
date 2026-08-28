@@ -48,9 +48,11 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1'
 
       - name: Install dependencies
+        id: install
         run: pnpm install --frozen-lockfile
 
       - name: Validate native module manifests
+        if: success()
         run: |
           set -euo pipefail
           test -f modules/accessibility-agent/package.json
@@ -63,26 +65,33 @@ jobs:
           node -e "for (const p of ['modules/accessibility-agent/package.json','modules/system-hands/package.json','modules/saf-file-operations/package.json']) { const x=require('./'+p); if(!x.name||!x.main) throw new Error(p+' invalid package manifest'); console.log(p,x.name,x.main) }"
 
       - name: TypeScript gate
+        if: success()
         run: pnpm exec tsc --noEmit
 
       - name: Build libbox
+        if: success()
         run: bash scripts/build-libbox-android.sh
 
       - name: Prebuild clean
+        if: success()
         run: |
           set -euo pipefail
           pnpm exec expo prebuild --platform android --clean --non-interactive
 
       - name: Verify autolinking output
+        if: success()
         run: |
           set -euo pipefail
           echo '=== generated ExpoModulesPackageList references ==='
-          grep -nE 'AccessibilityAgentModule|SystemHandsModule' node_modules/expo/android/build/generated/expo/src/main/java/expo/modules/ExpoModulesPackageList.kt || true
-          echo '=== Gradle projects containing native modules ==='
+          test -f node_modules/expo/android/build/generated/expo/src/main/java/expo/modules/ExpoModulesPackageList.kt
+          grep -nE 'AccessibilityAgentModule|SystemHandsModule|SafFileOperationsModule' node_modules/expo/android/build/generated/expo/src/main/java/expo/modules/ExpoModulesPackageList.kt
+          echo '=== Gradle projects ==='
+          test -x ./gradlew
           ./gradlew projects --no-daemon
 
       - name: Kotlin compile with diagnostics
         id: kotlin
+        if: success()
         continue-on-error: true
         run: |
           set -o pipefail
@@ -90,14 +99,18 @@ jobs:
           exit ${PIPESTATUS[0]}
 
       - name: App Kotlin compile diagnostics
-        if: always()
+        id: app-kotlin
+        if: success() && steps.kotlin.outcome == 'success'
+        continue-on-error: true
         run: |
           set -o pipefail
           ./gradlew :app:compileDebugKotlin --stacktrace --warning-mode all 2>&1 | tee app-kotlin-compile.log
           exit ${PIPESTATUS[0]}
 
       - name: Assemble debug
-        if: always()
+        id: assemble
+        if: success() && steps.kotlin.outcome == 'success' && steps.app-kotlin.outcome == 'success'
+        continue-on-error: true
         run: |
           set -o pipefail
           ./gradlew assembleDebug --stacktrace --warning-mode all 2>&1 | tee assemble-debug.log
@@ -111,17 +124,23 @@ jobs:
             echo
             echo "Commit: $GITHUB_SHA"
             echo
+            echo '## Gate outcomes'
+            echo "install=${{ steps.install.outcome }}"
+            echo "kotlin=${{ steps.kotlin.outcome }}"
+            echo "app-kotlin=${{ steps.app-kotlin.outcome }}"
+            echo "assemble=${{ steps.assemble.outcome }}"
+            echo
             echo '## Native module manifests'
             for f in modules/accessibility-agent/package.json modules/accessibility-agent/expo-module.config.json modules/system-hands/package.json modules/system-hands/expo-module.config.json modules/saf-file-operations/package.json modules/saf-file-operations/expo-module.config.json; do
               echo "### $f"
-              sed -n '1,120p' "$f" || true
+              sed -n '1,120p' "$f" 2>/dev/null || true
             done
             echo
             echo '## Generated module list'
             sed -n '1,180p' node_modules/expo/android/build/generated/expo/src/main/java/expo/modules/ExpoModulesPackageList.kt 2>/dev/null || true
             echo
             echo '## Gradle projects'
-            ./gradlew projects --no-daemon 2>&1 || true
+            if [ -x ./gradlew ]; then ./gradlew projects --no-daemon 2>&1 || true; else echo 'gradlew unavailable'; fi
           } > FAILURE_REPORT.md
 
       - name: Upload failure diagnostics
@@ -140,6 +159,7 @@ jobs:
       - name: Enforce gates
         if: always()
         run: |
+          test "${{ steps.install.outcome }}" = success
           test "${{ steps.kotlin.outcome }}" = success
-          test -s app-kotlin-compile.log
-          test -s assemble-debug.log
+          test "${{ steps.app-kotlin.outcome }}" = success
+          test "${{ steps.assemble.outcome }}" = success
