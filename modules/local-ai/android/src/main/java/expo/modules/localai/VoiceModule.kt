@@ -12,6 +12,7 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -124,18 +125,77 @@ class VoiceModule : Module() {
     }
 
     AsyncFunction("speak") { text: String ->
-      val context = appContext.reactContext ?: return@AsyncFunction false
-      if (tts == null) {
-        tts = TextToSpeech(context) { status ->
-          if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale("ru", "RU")
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "svetlana")
+      require(text.isNotBlank()) { "Speech text must not be blank" }
+      val context = appContext.reactContext
+        ?: throw IllegalStateException("Android context unavailable")
+
+      suspendCancellableCoroutine { continuation ->
+        val handler = Handler(Looper.getMainLooper())
+        val completed = AtomicBoolean(false)
+        val utteranceId = "svetlana-${System.nanoTime()}"
+
+        fun finishSuccess() {
+          if (completed.compareAndSet(false, true)) {
+            continuation.resume(true)
           }
         }
-      } else {
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "svetlana")
+
+        fun finishError(message: String) {
+          if (completed.compareAndSet(false, true)) {
+            continuation.resumeWithException(IllegalStateException(message))
+          }
+        }
+
+        val progressListener = object : TextToSpeech.OnUtteranceProgressListener() {
+          override fun onStart(id: String?) = Unit
+
+          override fun onDone(id: String?) {
+            if (id == utteranceId) finishSuccess()
+          }
+
+          override fun onError(id: String?) {
+            if (id == utteranceId) finishError("Android TTS failed")
+          }
+
+          override fun onError(id: String?, errorCode: Int) {
+            if (id == utteranceId) finishError("Android TTS failed (code $errorCode)")
+          }
+        }
+
+        fun speakNow(engine: TextToSpeech) {
+          engine.setOnUtteranceProgressListener(progressListener)
+          engine.language = Locale("ru", "RU")
+          val result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+          if (result == TextToSpeech.ERROR) {
+            finishError("Android TTS rejected the utterance")
+          }
+        }
+
+        continuation.invokeOnCancellation {
+          handler.post {
+            tts?.stop()
+            tts?.setOnUtteranceProgressListener(null)
+          }
+        }
+
+        handler.post {
+          val existing = tts
+          if (existing != null) {
+            speakNow(existing)
+            return@post
+          }
+
+          tts = TextToSpeech(context) { status ->
+            handler.post {
+              if (status == TextToSpeech.SUCCESS) {
+                tts?.let(::speakNow) ?: finishError("Android TTS initialization failed")
+              } else {
+                finishError("Android TTS initialization failed (status $status)")
+              }
+            }
+          }
+        }
       }
-      true
     }
 
     AsyncFunction("stopSpeaking") {
