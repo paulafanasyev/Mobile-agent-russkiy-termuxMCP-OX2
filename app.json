@@ -56,7 +56,10 @@
           "compileSdkVersion": 36,
           "targetSdkVersion": 36,
           "buildToolsVersion": "36.0.0",
-          "usesCleartextTraffic": true
+          "usesCleartextTraffic": true,
+          "packagingOptions": {
+            "exclude": ["META-INF/INDEX.LIST"]
+          }
         }
       }],
       "./plugins/with-litert-lm",
