@@ -153,12 +153,55 @@ jobs:
           set -o pipefail
           ./gradlew assembleDebug --stacktrace --warning-mode all --console=plain 2>&1 | tee "$RUNNER_TEMP/logs/assemble-debug.log"
 
+      - name: Build structured failure report
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set +e
+          REPORT="$RUNNER_TEMP/logs/FAILURE_REPORT.md"
+          {
+            echo "# OX2 Build Failure Report"
+            echo
+            echo "- Run ID: $GITHUB_RUN_ID"
+            echo "- Attempt: $GITHUB_RUN_ATTEMPT"
+            echo "- SHA: $GITHUB_SHA"
+            echo "- Ref: $GITHUB_REF_NAME"
+            echo "- Workflow: $GITHUB_WORKFLOW"
+            echo
+            echo "## First errors"
+            for f in "$RUNNER_TEMP/logs/libbox-build.log" "$RUNNER_TEMP/logs/kotlin-compile.log" "$RUNNER_TEMP/logs/assemble-debug.log"; do
+              if test -f "$f"; then
+                echo
+                echo "### $(basename "$f")"
+                grep -n -E '(^| )(e:|error:|ERROR|FAILURE:|Execution failed|Caused by:|Exception)' "$f" | head -80 || true
+              fi
+            done
+            echo
+            echo "## Gradle failure markers"
+            grep -R -n -E 'FAILURE:|BUILD FAILED|Compilation error|NoSuchFileException|Unresolved reference|Could not resolve|A failure occurred' "$RUNNER_TEMP/logs" 2>/dev/null | head -120 || true
+            echo
+            echo "## Deprecation warnings"
+            grep -R -n -E 'deprecated|Deprecation|WARNING' "$RUNNER_TEMP/logs" 2>/dev/null | head -120 || true
+            echo
+            echo "## Environment (non-secret)"
+            java -version 2>&1 || true
+            node --version 2>&1 || true
+            pnpm --version 2>&1 || true
+            go version 2>&1 || true
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version 2>&1 || true
+            echo
+            echo "## Git state"
+            git status --short
+          } > "$REPORT"
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload build diagnostics on failure
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: design-build-diagnostics-${{ github.run_id }}
           path: |
+            ${{ runner.temp }}/logs/FAILURE_REPORT.md
             ${{ runner.temp }}/logs/libbox-build.log
             ${{ runner.temp }}/logs/kotlin-compile.log
             ${{ runner.temp }}/logs/assemble-debug.log
