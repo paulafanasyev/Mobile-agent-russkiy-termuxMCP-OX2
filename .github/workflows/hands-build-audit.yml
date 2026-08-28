@@ -1,0 +1,145 @@
+name: Hands Build Audit
+
+on:
+  push:
+    branches:
+      - fix/hands-p0-p1-native-2026-08-28
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hands-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Go 1.24.7
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.7'
+          cache: false
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+          run_install: false
+
+      - name: Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate native module manifests
+        run: |
+          set -euo pipefail
+          test -f modules/accessibility-agent/package.json
+          test -f modules/accessibility-agent/expo-module.config.json
+          test -f modules/system-hands/package.json
+          test -f modules/system-hands/expo-module.config.json
+          test -f modules/system-hands/src/index.ts
+          test -f modules/saf-file-operations/package.json
+          test -f modules/saf-file-operations/expo-module.config.json
+          node -e "for (const p of ['modules/accessibility-agent/package.json','modules/system-hands/package.json','modules/saf-file-operations/package.json']) { const x=require('./'+p); if(!x.name||!x.main) throw new Error(p+' invalid package manifest'); console.log(p,x.name,x.main) }"
+
+      - name: TypeScript gate
+        run: pnpm exec tsc --noEmit
+
+      - name: Build libbox
+        run: bash scripts/build-libbox-android.sh
+
+      - name: Prebuild clean
+        run: |
+          set -euo pipefail
+          pnpm exec expo prebuild --platform android --clean --non-interactive
+
+      - name: Verify autolinking output
+        run: |
+          set -euo pipefail
+          echo '=== generated ExpoModulesPackageList references ==='
+          grep -nE 'AccessibilityAgentModule|SystemHandsModule' node_modules/expo/android/build/generated/expo/src/main/java/expo/modules/ExpoModulesPackageList.kt || true
+          echo '=== Gradle projects containing native modules ==='
+          ./gradlew projects --no-daemon
+
+      - name: Kotlin compile with diagnostics
+        id: kotlin
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          ./gradlew :expo:compileDebugKotlin --stacktrace --warning-mode all 2>&1 | tee kotlin-compile.log
+          exit ${PIPESTATUS[0]}
+
+      - name: App Kotlin compile diagnostics
+        if: always()
+        run: |
+          set -o pipefail
+          ./gradlew :app:compileDebugKotlin --stacktrace --warning-mode all 2>&1 | tee app-kotlin-compile.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Assemble debug
+        if: always()
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace --warning-mode all 2>&1 | tee assemble-debug.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Failure report
+        if: always()
+        run: |
+          {
+            echo '# Hands Build Failure Report'
+            echo
+            echo "Commit: $GITHUB_SHA"
+            echo
+            echo '## Native module manifests'
+            for f in modules/accessibility-agent/package.json modules/accessibility-agent/expo-module.config.json modules/system-hands/package.json modules/system-hands/expo-module.config.json modules/saf-file-operations/package.json modules/saf-file-operations/expo-module.config.json; do
+              echo "### $f"
+              sed -n '1,120p' "$f" || true
+            done
+            echo
+            echo '## Generated module list'
+            sed -n '1,180p' node_modules/expo/android/build/generated/expo/src/main/java/expo/modules/ExpoModulesPackageList.kt 2>/dev/null || true
+            echo
+            echo '## Gradle projects'
+            ./gradlew projects --no-daemon 2>&1 || true
+          } > FAILURE_REPORT.md
+
+      - name: Upload failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hands-build-failure-${{ github.run_id }}
+          path: |
+            kotlin-compile.log
+            app-kotlin-compile.log
+            assemble-debug.log
+            FAILURE_REPORT.md
+            android/build/reports/problems/problems-report.html
+          if-no-files-found: warn
+
+      - name: Enforce gates
+        if: always()
+        run: |
+          test "${{ steps.kotlin.outcome }}" = success
+          test -s app-kotlin-compile.log
+          test -s assemble-debug.log
