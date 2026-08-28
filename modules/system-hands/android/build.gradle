@@ -16,5 +16,9 @@ android {
 }
 
 dependencies {
-  implementation("androidx.activity:activity-ktx:1.10.1")
+  // Keep the base Activity artifact explicit: ActivityResultLauncher and
+  // ActivityResultContracts are defined there. The KTX artifact supplies
+  // Kotlin extensions but must not be the only dependency we rely on.
+  api("androidx.activity:activity:1.10.1")
+  api("androidx.activity:activity-ktx:1.10.1")
 }
