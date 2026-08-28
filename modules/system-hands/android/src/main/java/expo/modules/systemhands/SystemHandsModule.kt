@@ -25,6 +25,55 @@ import kotlin.coroutines.resume
 class SystemHandsModule : Module() {
   private var cameraLauncher: AppContextActivityResultLauncher<CameraCaptureContractOptions, Boolean>? = null
 
+  private suspend fun captureCamera(): Map<String, Any> {
+    val context = appContext.reactContext ?: return mapOf("status" to "camera_failed", "verified" to false, "reason" to "Android context unavailable")
+    if (Build.VERSION.SDK_INT < 29) return mapOf("status" to "unsupported_android_version", "verified" to false, "minimumApi" to 29)
+
+    val values = ContentValues().apply {
+      put(MediaStore.Images.Media.DISPLAY_NAME, "hands-${System.currentTimeMillis()}.jpg")
+      put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+      put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/OX2")
+      put(MediaStore.Images.Media.IS_PENDING, 1)
+    }
+    val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+      ?: return mapOf("status" to "camera_failed", "verified" to false, "reason" to "MediaStore insert failed")
+
+    val launcher = cameraLauncher ?: run {
+      context.contentResolver.delete(uri, null, null)
+      return mapOf("status" to "camera_failed", "verified" to false, "reason" to "Camera launcher unavailable")
+    }
+
+    try {
+      val success = suspendCancellableCoroutine<Boolean> { continuation ->
+        launcher.launch(
+          CameraCaptureContractOptions(uri.toString()),
+          ActivityResultCallback { result ->
+            if (continuation.isActive) continuation.resume(result)
+          }
+        )
+        continuation.invokeOnCancellation {
+          context.contentResolver.delete(uri, null, null)
+        }
+      }
+      if (!success) {
+        context.contentResolver.delete(uri, null, null)
+        return mapOf("status" to "camera_cancelled", "verified" to false, "uri" to uri.toString())
+      }
+
+      val valuesComplete = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+      context.contentResolver.update(uri, valuesComplete, null, null)
+      val size = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+      if (size > 0L) {
+        mapOf("status" to "camera_verified", "verified" to true, "uri" to uri.toString(), "sizeBytes" to size)
+      } else {
+        mapOf("status" to "camera_unverified", "verified" to false, "uri" to uri.toString(), "sizeBytes" to size)
+      }
+    } catch (t: Throwable) {
+      context.contentResolver.delete(uri, null, null)
+      mapOf("status" to "camera_failed", "verified" to false, "uri" to uri.toString(), "reason" to (t.message ?: t.javaClass.simpleName))
+    }
+  }
+
   override fun definition() = ModuleDefinition {
     Name("SystemHands")
 
@@ -56,54 +105,7 @@ class SystemHandsModule : Module() {
       try { camera.setTorchMode(cameraId, enabled); mapOf("status" to "changed", "enabled" to enabled) } catch (_: SecurityException) { mapOf("status" to "permission_required", "enabled" to enabled) }
     }
 
-    AsyncFunction("captureCamera") Coroutine {
-      val context = appContext.reactContext ?: return@Coroutine mapOf("status" to "camera_failed", "verified" to false, "reason" to "Android context unavailable")
-      if (Build.VERSION.SDK_INT < 29) return@Coroutine mapOf("status" to "unsupported_android_version", "verified" to false, "minimumApi" to 29)
-
-      val values = ContentValues().apply {
-        put(MediaStore.Images.Media.DISPLAY_NAME, "hands-${System.currentTimeMillis()}.jpg")
-        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/OX2")
-        put(MediaStore.Images.Media.IS_PENDING, 1)
-      }
-      val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-        ?: return@Coroutine mapOf("status" to "camera_failed", "verified" to false, "reason" to "MediaStore insert failed")
-
-      val launcher = cameraLauncher ?: run {
-        context.contentResolver.delete(uri, null, null)
-        return@Coroutine mapOf("status" to "camera_failed", "verified" to false, "reason" to "Camera launcher unavailable")
-      }
-
-      try {
-        val success = suspendCancellableCoroutine<Boolean> { continuation ->
-          launcher.launch(
-            CameraCaptureContractOptions(uri.toString()),
-            ActivityResultCallback { result ->
-              if (continuation.isActive) continuation.resume(result)
-            }
-          )
-          continuation.invokeOnCancellation {
-            context.contentResolver.delete(uri, null, null)
-          }
-        }
-        if (!success) {
-          context.contentResolver.delete(uri, null, null)
-          return@Coroutine mapOf("status" to "camera_cancelled", "verified" to false, "uri" to uri.toString())
-        }
-
-        val valuesComplete = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
-        context.contentResolver.update(uri, valuesComplete, null, null)
-        val size = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-        if (size > 0L) {
-          mapOf("status" to "camera_verified", "verified" to true, "uri" to uri.toString(), "sizeBytes" to size)
-        } else {
-          mapOf("status" to "camera_unverified", "verified" to false, "uri" to uri.toString(), "sizeBytes" to size)
-        }
-      } catch (t: Throwable) {
-        context.contentResolver.delete(uri, null, null)
-        mapOf("status" to "camera_failed", "verified" to false, "uri" to uri.toString(), "reason" to (t.message ?: t.javaClass.simpleName))
-      }
-    }
+    AsyncFunction("captureCamera") Coroutine ::captureCamera
 
     AsyncFunction("sendMediaBroadcast") { action: String, keyCode: Int ->
       val context = appContext.reactContext ?: error("Android context unavailable")
