@@ -1,4 +1,4 @@
-import { requireNativeModule } from 'expo-modules-core';
+import { EventEmitter, requireNativeModule } from 'expo-modules-core';
 
 export type SvetlanaVoiceCapabilities = {
   supported: boolean;
@@ -14,6 +14,24 @@ export const SvetlanaVoice = requireNativeModule<{
   speak(text: string): Promise<boolean>;
   stopSpeaking(): Promise<boolean>;
 }>('SvetlanaVoice');
+
+export type AzureVisemeEvent = {
+  visemeId: number;
+  audioOffsetMs: number;
+  resultId?: string;
+};
+
+export const AzureViseme = requireNativeModule<{
+  speakWithVisemes(
+    text: string,
+    authorizationToken: string,
+    region: string,
+    locale: string,
+  ): Promise<boolean>;
+  stopSpeaking(): Promise<boolean>;
+}>('AzureViseme');
+
+export const AzureVisemeEvents = new EventEmitter(AzureViseme);
 
 export const LocalAi = requireNativeModule<{
   nativeStatus(): Promise<Record<string, unknown>>;
