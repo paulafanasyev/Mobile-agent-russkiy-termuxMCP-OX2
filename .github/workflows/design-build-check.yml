@@ -14,20 +14,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.29.2
           run_install: false
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
       - name: Install dependencies (frozen)
         run: pnpm install --frozen-lockfile
+
+      - name: Verify lockfile unchanged
+        run: git diff --exit-code -- pnpm-lock.yaml
 
       - name: TypeScript compile
         run: pnpm exec tsc --noEmit
@@ -43,6 +46,9 @@ jobs:
 
       - name: Expo prebuild
         run: pnpm exec expo prebuild
+
+      - name: Verify dependency manifests unchanged
+        run: git diff --exit-code -- package.json pnpm-lock.yaml
 
       - name: Kotlin compile
         working-directory: android
