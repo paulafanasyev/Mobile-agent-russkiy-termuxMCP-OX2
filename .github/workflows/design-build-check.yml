@@ -137,14 +137,19 @@ jobs:
 
       - name: Kotlin compile
         working-directory: android
-        run: ./gradlew :expo:compileDebugKotlin --stacktrace --console=plain
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/logs"
+          ./gradlew :expo:compileDebugKotlin --stacktrace --console=plain 2>&1 | tee "$RUNNER_TEMP/logs/kotlin-compile.log"
 
-      - name: Upload libbox diagnostics on failure
+      - name: Upload build diagnostics on failure
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: design-build-diagnostics-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/logs/libbox-build.log
+            ${{ runner.temp }}/logs/kotlin-compile.log
             android/local.properties
           if-no-files-found: warn
