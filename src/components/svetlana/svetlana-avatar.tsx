@@ -9,8 +9,7 @@ const ORB: Record<SvetlanaOrbState, string> = {
   listening: "#38bdf8",
   thinking: "#f59e0b",
   speaking: "#8b5cf6",
-  warning: "#ef4444",
-  joy: "#fbbf24",
+  error: "#ef4444",
 };
 
 export function SvetlanaAvatar({
@@ -35,7 +34,7 @@ export function SvetlanaAvatar({
   const mouthRadius = useRef(new Animated.Value(8)).current;
 
   useEffect(() => {
-    const duration = resolvedState === "warning" ? 420 : resolvedState === "listening" ? 900 : 1500;
+    const duration = resolvedState === "error" ? 420 : resolvedState === "listening" ? 900 : 1500;
     const animation = Animated.loop(Animated.sequence([
       Animated.timing(orbPulse, { toValue: resolvedState === "idle" ? 1.02 : 1.09, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       Animated.timing(orbPulse, { toValue: 1, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -67,7 +66,7 @@ export function SvetlanaAvatar({
       Animated.timing(mouthRadius, { toValue: shape.radius, duration: 45, useNativeDriver: false }),
       Animated.timing(mouthScale, { toValue: shape.scaleY, duration: 45, useNativeDriver: true }),
     ]).start();
-  }, [mouthScale, mouthWidth, mouthScaleX, mouthRadius, speaking, visemeId]);
+  }, [mouthScale, mouthWidth, mouthRadius, mouthScaleX, speaking, visemeId]);
 
   const orb = ORB[resolvedState];
   const background = scheme === "dark" ? "#17111f" : "#faf8f5";
