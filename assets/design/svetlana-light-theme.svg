@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1600" height="1400" viewBox="0 0 1600 1400">
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#faf8f5"/><stop offset="1" stop-color="#e8e3dc"/></linearGradient>
+ <linearGradient id="purple" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#c4b5fd"/></linearGradient>
+ <filter id="shadow"><feDropShadow dx="0" dy="12" stdDeviation="18" flood-opacity=".12"/></filter>
+ <filter id="glow"><feGaussianBlur stdDeviation="10" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <clipPath id="portrait"><circle cx="330" cy="365" r="285"/></clipPath>
+ <clipPath id="thumb1"><circle cx="735" cy="330" r="75"/></clipPath>
+ <clipPath id="thumb2"><circle cx="930" cy="330" r="75"/></clipPath>
+ <clipPath id="thumb3"><circle cx="1125" cy="330" r="75"/></clipPath>
+ <clipPath id="thumb4"><circle cx="1320" cy="330" r="75"/></clipPath>
+ <clipPath id="emotion"><rect x="660" y="505" width="170" height="210" rx="22"/></clipPath>
+</defs>
+<rect width="1600" height="1400" fill="url(#bg)"/>
+<!-- Header -->
+<text x="700" y="95" font-family="sans-serif" font-size="62" font-weight="700" fill="#171321">Светлана</text>
+<text x="704" y="140" font-family="sans-serif" font-size="29" fill="#7c5ce6">AI-ассистент OX2</text>
+<text x="704" y="185" font-family="sans-serif" font-size="22" fill="#5f5968">Ваш интеллектуальный голосовой помощник.</text>
+<text x="704" y="217" font-family="sans-serif" font-size="22" fill="#5f5968">Всегда на связи, всегда готова помочь.</text>
+<circle cx="1450" cy="105" r="55" fill="#fff" stroke="#a78bfa" stroke-width="5" filter="url(#shadow)"/>
+<text x="1410" y="116" font-family="sans-serif" font-size="28" font-weight="700" fill="#171321">OX2</text>
+<!-- Main portrait card -->
+<circle cx="330" cy="365" r="305" fill="#fff" filter="url(#shadow)"/>
+<circle cx="330" cy="365" r="300" fill="none" stroke="url(#purple)" stroke-width="10" filter="url(#glow)"/>
+<image x="45" y="80" width="570" height="570" xlink:href="../images/svetlana-approved.svg" preserveAspectRatio="xMidYMid slice" clip-path="url(#portrait)"/>
+<circle cx="330" cy="365" r="285" fill="none" stroke="#ffffff" stroke-width="5" opacity=".9"/>
+<circle cx="330" cy="615" r="62" fill="#fff" stroke="#a78bfa" stroke-width="5" filter="url(#shadow)"/>
+<path d="M330 580v48 M308 620c0 20 44 20 44 0 M303 602v20c0 30 54 30 54 0v-20 M316 650h28" fill="none" stroke="#7c5ce6" stroke-width="8" stroke-linecap="round"/>
+<!-- States -->
+<rect x="660" y="255" width="840" height="225" rx="30" fill="#fff" filter="url(#shadow)"/>
+<text x="695" y="295" font-family="sans-serif" font-size="20" font-weight="700" fill="#494252">СОСТОЯНИЯ</text>
+<g font-family="sans-serif" font-size="18" text-anchor="middle" fill="#403a49">
+ <circle cx="735" cy="330" r="82" fill="#fff" stroke="#a78bfa" stroke-width="5"/><image x="660" y="255" width="150" height="150" xlink:href="../images/svetlana-approved.svg" clip-path="url(#thumb1)"/><text x="735" y="440">Ожидание</text>
+ <circle cx="930" cy="330" r="82" fill="#fff" stroke="#60a5fa" stroke-width="5"/><image x="855" y="255" width="150" height="150" xlink:href="../images/svetlana-approved.svg" clip-path="url(#thumb2)"/><text x="930" y="440">Слушает</text>
+ <circle cx="1125" cy="330" r="82" fill="#fff" stroke="#f59e0b" stroke-width="5"/><image x="1050" y="255" width="150" height="150" xlink:href="../images/svetlana-approved.svg" clip-path="url(#thumb3)"/><text x="1125" y="440">Думает</text>
+ <circle cx="1320" cy="330" r="82" fill="#fff" stroke="#8b5cf6" stroke-width="5"/><image x="1245" y="255" width="150" height="150" xlink:href="../images/svetlana-approved.svg" clip-path="url(#thumb4)"/><text x="1320" y="440">Говорит</text>
+</g>
+<!-- Emotions -->
+<rect x="660" y="505" width="840" height="280" rx="30" fill="#fff" filter="url(#shadow)"/>
+<text x="695" y="545" font-family="sans-serif" font-size="20" font-weight="700" fill="#494252">ЭМОЦИИ</text>
+<g font-family="sans-serif" font-size="17" text-anchor="middle" fill="#403a49">
+ <rect x="660" y="570" width="170" height="210" rx="22" fill="#f7f3ee"/><image x="660" y="505" width="170" height="210" xlink:href="../images/svetlana-approved.svg" clip-path="url(#emotion)"/><text x="745" y="755">Дружелюбие</text>
+ <rect x="845" y="570" width="170" height="210" rx="22" fill="#f7f3ee"/><image x="845" y="505" width="170" height="210" xlink:href="../images/svetlana-approved.svg" clip-path="url(#emotion)"/><text x="930" y="755">Внимание</text>
+ <rect x="1030" y="570" width="170" height="210" rx="22" fill="#f7f3ee"/><image x="1030" y="505" width="170" height="210" xlink:href="../images/svetlana-approved.svg" clip-path="url(#emotion)"/><text x="1115" y="755">Радость</text>
+ <rect x="1215" y="570" width="170" height="210" rx="22" fill="#f7f3ee"/><image x="1215" y="505" width="170" height="210" xlink:href="../images/svetlana-approved.svg" clip-path="url(#emotion)"/><text x="1300" y="755">Задумчивость</text>
+ <rect x="1400" y="570" width="100" height="210" rx="22" fill="#f7f3ee"/><image x="1400" y="505" width="170" height="210" xlink:href="../images/svetlana-approved.svg" clip-path="url(#emotion)"/><text x="1450" y="755">Поддержка</text>
+</g>
+<!-- Modes -->
+<rect x="55" y="700" width="555" height="310" rx="30" fill="#fff" filter="url(#shadow)"/>
+<text x="90" y="742" font-family="sans-serif" font-size="20" font-weight="700" fill="#494252">РЕЖИМЫ ОТОБРАЖЕНИЯ</text>
+<rect x="90" y="775" width="155" height="190" rx="20" fill="#f4efff" stroke="#8b5cf6" stroke-width="3"/><image x="105" y="790" width="125" height="145" xlink:href="../images/svetlana-approved.svg" preserveAspectRatio="xMidYMid slice"/><text x="168" y="992" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#403a49">Полный экран</text>
+<rect x="265" y="775" width="155" height="190" rx="20" fill="#f7f3ee"/><image x="310" y="825" width="90" height="90" xlink:href="../images/svetlana-approved.svg"/><text x="342" y="992" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#403a49">Плавающее окно</text>
+<rect x="440" y="775" width="135" height="190" rx="20" fill="#f7f3ee"/><image x="470" y="850" width="75" height="75" xlink:href="../images/svetlana-approved.svg"/><text x="507" y="992" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#403a49">Мини 80×80</text>
+<!-- Style/details -->
+<rect x="660" y="820" width="840" height="430" rx="30" fill="#fff" filter="url(#shadow)"/>
+<text x="695" y="860" font-family="sans-serif" font-size="20" font-weight="700" fill="#494252">СТИЛЬ И ДЕТАЛИ</text>
+<rect x="695" y="890" width="430" height="325" rx="24" fill="#f7f3ee"/><image x="695" y="890" width="430" height="325" xlink:href="../images/svetlana-approved.svg" preserveAspectRatio="xMidYMid slice"/>
+<g font-family="sans-serif"><text x="1180" y="930" font-size="21" font-weight="700" fill="#25202f">Реалистичный образ</text><text x="1180" y="962" font-size="17" fill="#686171">Естественная мимика</text><text x="1180" y="988" font-size="17" fill="#686171">и движения</text><text x="1180" y="1055" font-size="21" font-weight="700" fill="#25202f">Голосовой AI-ассистент</text><text x="1180" y="1087" font-size="17" fill="#686171">Слушает, понимает</text><text x="1180" y="1113" font-size="17" fill="#686171">и отвечает</text><text x="1180" y="1180" font-size="21" font-weight="700" fill="#25202f">Светлая тема</text><text x="1180" y="1212" font-size="17" fill="#686171">Фиолетовые акценты</text></g>
+<!-- Palette -->
+<rect x="55" y="1035" width="555" height="215" rx="30" fill="#fff" filter="url(#shadow)"/><text x="90" y="1075" font-family="sans-serif" font-size="20" font-weight="700" fill="#494252">ЦВЕТОВАЯ ПАЛИТРА</text>
+<g><rect x="95" y="1110" width="75" height="65" rx="14" fill="#6c5ce7"/><rect x="190" y="1110" width="75" height="65" rx="14" fill="#a78bfa"/><rect x="285" y="1110" width="75" height="65" rx="14" fill="#8fb8ee"/><rect x="380" y="1110" width="75" height="65" rx="14" fill="#f3eee8"/><rect x="475" y="1110" width="75" height="65" rx="14" fill="#e8e3dc"/></g>
+<text x="800" y="1325" font-family="sans-serif" font-size="20" fill="#655f6c">Светлая тема • системная тема поддерживается • glow-orb • full/compact • viseme-ready</text>
+</svg>
