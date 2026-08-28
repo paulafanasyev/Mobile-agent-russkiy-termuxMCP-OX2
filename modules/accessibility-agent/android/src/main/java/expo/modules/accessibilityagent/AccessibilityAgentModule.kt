@@ -19,14 +19,10 @@ class AccessibilityAgentModule : Module() {
     }
     AsyncFunction("screenshot") { promise: Promise ->
       val service = OX2AccessibilityService.instance
-      if (service == null) {
-        promise.resolve(mapOf("status" to "accessibility_disabled", "verified" to false))
-      } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-        promise.resolve(mapOf("status" to "unsupported_android_version", "verified" to false, "minimumApi" to 30))
-      } else {
-        try { promise.resolve(HandsScreenshot.capture(service)) }
-        catch (t: Throwable) { promise.resolve(mapOf("status" to "screenshot_failed", "verified" to false, "reason" to (t.message ?: t.javaClass.simpleName))) }
-      }
+      if (service == null) promise.resolve(mapOf("status" to "accessibility_disabled", "verified" to false))
+      else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) promise.resolve(mapOf("status" to "unsupported_android_version", "verified" to false, "minimumApi" to 30))
+      else try { promise.resolve(HandsScreenshot.capture(service)) }
+      catch (t: Throwable) { promise.resolve(mapOf("status" to "screenshot_failed", "verified" to false, "reason" to (t.message ?: t.javaClass.simpleName))) }
     }
     AsyncFunction("perform") { actionJson: String ->
       val service = OX2AccessibilityService.instance ?: return@AsyncFunction mapOf("status" to "accessibility_disabled", "action" to "unknown")
@@ -41,6 +37,7 @@ class AccessibilityAgentModule : Module() {
 
   private fun validateAction(json: JSONObject, type: String, service: OX2AccessibilityService): Boolean = when (type) {
     "back", "home", "recents" -> true
+    "press_key" -> json.optString("key", "") in GLOBAL_ACTION_KEYS
     "type" -> json.optString("text", "").length <= HANDS_MAX_TEXT_LENGTH && NODE_ID.matches(json.optString("nodeId", ""))
     "clear_text", "select_text", "copy", "paste" -> NODE_ID.matches(json.optString("nodeId", ""))
     "tap", "double_tap", "long_press" -> validPoint(json, "x", "y", service)
@@ -52,5 +49,11 @@ class AccessibilityAgentModule : Module() {
     val x=json.optDouble(xKey,Double.NaN); val y=json.optDouble(yKey,Double.NaN); val w=service.resources.displayMetrics.widthPixels.toDouble(); val h=service.resources.displayMetrics.heightPixels.toDouble()
     return x.isFinite() && y.isFinite() && x>=0 && y>=0 && x<w && y<h
   }
-  companion object { private const val HANDS_MAX_TREE_NODES=200; private const val HANDS_MAX_TEXT_LENGTH=4096; private val SUPPORTED_ACTIONS=setOf("back","home","recents","tap","double_tap","long_press","swipe","scroll","drag","type","clear_text","select_text","copy","paste"); private val NODE_ID=Regex("^0(?:\\.[0-9]+)+$") }
+  companion object {
+    private const val HANDS_MAX_TREE_NODES=200
+    private const val HANDS_MAX_TEXT_LENGTH=4096
+    private val GLOBAL_ACTION_KEYS=setOf("back","home","recents","notifications","quick_settings","power_dialog","lock_screen","headset_hook","take_screenshot")
+    private val SUPPORTED_ACTIONS=setOf("back","home","recents","press_key","tap","double_tap","long_press","swipe","scroll","drag","type","clear_text","select_text","copy","paste")
+    private val NODE_ID=Regex("^0(?:\\.[0-9]+)+$")
+  }
 }

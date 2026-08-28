@@ -1,9 +1,9 @@
-/** Hands executors for filesystem, screenshot and media controls. */
+/** Hands executors for filesystem, screenshot, camera and media controls. */
 import * as FileSystem from 'expo-file-system';
-import * as IntentLauncher from 'expo-intent-launcher';
 import { Platform } from 'react-native';
 import { z } from 'zod';
 import { nativeScreenshot } from '../../..//modules/accessibility-agent/native';
+import { getSystemHandsNative } from '../../../modules/system-hands/src';
 
 const fileUri = z.string().refine((v) => v.startsWith('file://') || v.startsWith('content://'), 'Expected file:// or content:// URI');
 export const fileReadHandsSchema = z.object({ uri: fileUri, maxBytes: z.number().int().positive().max(5_000_000).default(100_000) });
@@ -13,8 +13,11 @@ export const fileDeleteHandsSchema = z.object({ uri: fileUri });
 export const fileRenameHandsSchema = z.object({ uri: fileUri, newUri: fileUri });
 
 function localFileOnly(uri: string): boolean { return uri.startsWith('file://'); }
+function contentFileOnly(uri: string): boolean { return uri.startsWith('content://'); }
+function displayNameFromUri(uri: string): string { const raw = uri.split('/').filter(Boolean).pop() || ''; try { return decodeURIComponent(raw); } catch { return raw; } }
 
 export async function executeHandsFileRead(args: z.infer<typeof fileReadHandsSchema>) {
+  if (contentFileOnly(args.uri) && Platform.OS === 'android') return getSystemHandsNative().readContent(args.uri, args.maxBytes);
   if (!localFileOnly(args.uri)) return { status: 'unsupported_uri', verified: false, uri: args.uri };
   try {
     const info = await FileSystem.getInfoAsync(args.uri);
@@ -26,6 +29,7 @@ export async function executeHandsFileRead(args: z.infer<typeof fileReadHandsSch
 }
 
 export async function executeHandsFileWrite(args: z.infer<typeof fileWriteHandsSchema>) {
+  if (contentFileOnly(args.uri) && Platform.OS === 'android') return getSystemHandsNative().writeContent(args.uri, args.content, args.append);
   if (!localFileOnly(args.uri)) return { status: 'unsupported_uri', verified: false, uri: args.uri };
   try {
     const previous = args.append ? await FileSystem.readAsStringAsync(args.uri, { encoding: FileSystem.EncodingType.UTF8 }).catch(() => '') : '';
@@ -37,45 +41,44 @@ export async function executeHandsFileWrite(args: z.infer<typeof fileWriteHandsS
 }
 
 export async function executeHandsFileMove(args: z.infer<typeof filePairHandsSchema>) {
+  if (contentFileOnly(args.sourceUri) && contentFileOnly(args.destinationUri) && Platform.OS === 'android') return getSystemHandsNative().moveContent(args.sourceUri, args.destinationUri);
   if (!localFileOnly(args.sourceUri) || !localFileOnly(args.destinationUri)) return { status: 'unsupported_uri', verified: false };
   try {
     await FileSystem.moveAsync({ from: args.sourceUri, to: args.destinationUri });
-    const source = await FileSystem.getInfoAsync(args.sourceUri);
-    const destination = await FileSystem.getInfoAsync(args.destinationUri);
+    const source = await FileSystem.getInfoAsync(args.sourceUri); const destination = await FileSystem.getInfoAsync(args.destinationUri);
     const verified = !source.exists && destination.exists;
     return { status: verified ? 'move_verified' : 'move_unverified', verified, sourceUri: args.sourceUri, destinationUri: args.destinationUri };
   } catch { return { status: 'move_failed', verified: false }; }
 }
 
 export async function executeHandsFileDelete(args: z.infer<typeof fileDeleteHandsSchema>) {
+  if (contentFileOnly(args.uri) && Platform.OS === 'android') return getSystemHandsNative().deleteContent(args.uri);
   if (!localFileOnly(args.uri)) return { status: 'unsupported_uri', verified: false, uri: args.uri };
-  try {
-    await FileSystem.deleteAsync(args.uri, { idempotent: false });
-    const info = await FileSystem.getInfoAsync(args.uri);
-    return { status: !info.exists ? 'delete_verified' : 'delete_unverified', verified: !info.exists, uri: args.uri };
-  } catch { return { status: 'delete_failed', verified: false, uri: args.uri };
-  }
+  try { await FileSystem.deleteAsync(args.uri, { idempotent: false }); const info = await FileSystem.getInfoAsync(args.uri); return { status: !info.exists ? 'delete_verified' : 'delete_unverified', verified: !info.exists, uri: args.uri }; }
+  catch { return { status: 'delete_failed', verified: false, uri: args.uri }; }
 }
 
 export async function executeHandsFileRename(args: z.infer<typeof fileRenameHandsSchema>) {
+  if (contentFileOnly(args.uri) && contentFileOnly(args.newUri) && Platform.OS === 'android') return getSystemHandsNative().renameContent(args.uri, displayNameFromUri(args.newUri));
   return executeHandsFileMove({ sourceUri: args.uri, destinationUri: args.newUri });
 }
 
-export async function executeHandsScreenshot() {
-  return nativeScreenshot();
+export async function executeHandsScreenshot() { return nativeScreenshot(); }
+
+export async function executeHandsCamera() {
+  if (Platform.OS !== 'android') return { status: 'unsupported_platform', verified: false };
+  return getSystemHandsNative().captureCamera();
 }
 
 const mediaActions = {
-  play_media: 'android.intent.action.MEDIA_PLAY',
-  pause_media: 'android.intent.action.MEDIA_PAUSE',
-  next_media: 'android.intent.action.MEDIA_NEXT',
+  play_media: 126,
+  pause_media: 127,
+  next_media: 87,
 } as const;
 export const mediaHandsSchema = z.object({});
 
 export async function executeHandsMedia(action: keyof typeof mediaActions) {
   if (Platform.OS !== 'android') return { status: 'unsupported_platform', verified: false, action };
-  try {
-    await IntentLauncher.startActivityAsync(mediaActions[action]);
-    return { status: 'intent_launched', verified: false, verification: 'intent_only', action };
-  } catch { return { status: 'intent_failed', verified: false, action }; }
+  try { return await getSystemHandsNative().sendMediaBroadcast('android.intent.action.MEDIA_BUTTON', mediaActions[action]); }
+  catch { return { status: 'broadcast_failed', verified: false, action }; }
 }
