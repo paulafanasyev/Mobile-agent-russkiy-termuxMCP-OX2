@@ -23,21 +23,60 @@ jobs:
       - name: Design Gate — approved Svetlana must be present before APK build
         shell: bash
         run: |
-          set -euo pipefail
-          test -s src/components/svetlana/svetlana-design.ts
-          grep -q '2026-08-28-approved' src/components/svetlana/svetlana-design.ts
-          grep -q 'realistic-photo' src/components/svetlana/svetlana-design.ts
-          grep -q 'fullSize: 180' src/components/svetlana/svetlana-design.ts
-          grep -q 'compactSize: 80' src/components/svetlana/svetlana-design.ts
-          grep -q 'mouthLayerId: "svetlanaMouth"' src/components/svetlana/svetlana-design.ts
-          test -s assets/images/svetlana-approved.jpg
-          test "$(sha256sum assets/images/svetlana-approved.jpg | cut -d' ' -f1)" = "b55dd099a0fdea48810986f2a1fec2db557b0430d6906dea8dce263864b3dc63"
-          grep -q 'svetlana-approved.jpg' src/components/svetlana/svetlana-avatar.tsx
-          grep -q 'SvetlanaOrbState' src/components/svetlana/svetlana-avatar.tsx
-          grep -q 'useColorScheme' src/components/svetlana/svetlana-avatar.tsx
-          grep -q 'SVETLANA_DESIGN.compactSize' src/components/svetlana/svetlana-avatar.tsx
-          grep -q 'nativeID={SVETLANA_DESIGN.mouthLayerId}' src/components/svetlana/svetlana-avatar.tsx
-          echo 'APPROVED_SVETLANA_DESIGN=PASS' >> "$GITHUB_STEP_SUMMARY"
+          set -uo pipefail
+          failures=0
+          check_file() {
+            local label="$1" path="$2"
+            if [ -s "$path" ]; then
+              echo "PASS: $label"
+            else
+              echo "FAIL: $label — missing or empty: $path"
+              failures=$((failures + 1))
+            fi
+          }
+          check_grep() {
+            local label="$1" pattern="$2" path="$3"
+            if grep -Fq -- "$pattern" "$path"; then
+              echo "PASS: $label"
+            else
+              echo "FAIL: $label — pattern not found: [$pattern] in $path"
+              failures=$((failures + 1))
+            fi
+          }
+
+          echo '=== SVETLANA DESIGN GATE ==='
+          check_file 'design contract exists' src/components/svetlana/svetlana-design.ts
+          check_grep 'approved version' '2026-08-28-approved' src/components/svetlana/svetlana-design.ts
+          check_grep 'approved face type' 'realistic-photo' src/components/svetlana/svetlana-design.ts
+          check_grep 'fullSize' 'fullSize: 180' src/components/svetlana/svetlana-design.ts
+          check_grep 'compactSize' 'compactSize: 80' src/components/svetlana/svetlana-design.ts
+          check_grep 'mouthLayerId' 'mouthLayerId: "svetlanaMouth"' src/components/svetlana/svetlana-design.ts
+          check_file 'approved portrait exists' assets/images/svetlana-approved.jpg
+
+          if [ -s assets/images/svetlana-approved.jpg ]; then
+            actual_sha="$(sha256sum assets/images/svetlana-approved.jpg | awk '{print $1}')"
+            expected_sha='b55dd099a0fdea48810986f2a1fec2db557b0430d6906dea8dce263864b3dc63'
+            if [ "$actual_sha" = "$expected_sha" ]; then
+              echo "PASS: approved portrait SHA256 $actual_sha"
+            else
+              echo "FAIL: approved portrait SHA256 mismatch — expected=$expected_sha actual=$actual_sha"
+              failures=$((failures + 1))
+            fi
+          fi
+
+          check_grep 'avatar imports approved portrait' 'svetlana-approved.jpg' src/components/svetlana/svetlana-avatar.tsx
+          check_grep 'avatar uses SvetlanaOrbState' 'SvetlanaOrbState' src/components/svetlana/svetlana-avatar.tsx
+          check_grep 'avatar uses color scheme' 'useColorScheme' src/components/svetlana/svetlana-avatar.tsx
+          check_grep 'avatar uses compact contract directly' 'SVETLANA_DESIGN.compactSize' src/components/svetlana/svetlana-avatar.tsx
+          check_grep 'avatar binds mouth layer directly' 'nativeID={SVETLANA_DESIGN.mouthLayerId}' src/components/svetlana/svetlana-avatar.tsx
+
+          echo '=== DESIGN GATE SUMMARY ==='
+          if [ "$failures" -ne 0 ]; then
+            echo "::error::APPROVED_SVETLANA_DESIGN=FAIL failures=$failures"
+            exit 1
+          fi
+          echo 'APPROVED_SVETLANA_DESIGN=PASS'
+          echo 'All Svetlana contract checks passed.' >> "$GITHUB_STEP_SUMMARY"
       - name: Java 17
         uses: actions/setup-java@v5
         with:
