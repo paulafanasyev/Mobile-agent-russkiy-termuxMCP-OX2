@@ -14,13 +14,14 @@ import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import { requireNativeModule } from 'expo';
 import { z } from 'zod';
-import {
-  isAppApprovedForSession,
-  getSessionApprovedPackages,
-} from '../device-tools';
+import { isAppApprovedForSession, getSessionApprovedPackages } from '../device-tools';
+
+// Android package names: each component must start with a letter and contain
+// only letters, digits or underscores. Reject empty components such as com..evil.
+const packageNamePattern = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/i;
 
 export const openAppSchema = z.object({
-  packageName: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i),
+  packageName: z.string().regex(packageNamePattern, 'Invalid Android package name').max(255),
 });
 
 export const listAppsSchema = z.object({});
@@ -86,7 +87,6 @@ export async function executeOpenApp(
     return { status: 'launch_failed', packageName: args.packageName, verified: false };
   }
 
-  // Verification requires an actual foreground transition, not merely a resolved launch Promise.
   const transitioned = beforePackage !== args.packageName;
   const verified = transitioned && await waitForForegroundPackage(args.packageName);
 
