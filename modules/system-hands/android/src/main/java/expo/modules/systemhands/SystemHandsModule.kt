@@ -12,6 +12,7 @@ import android.view.KeyEvent
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
+import androidx.activity.result.ActivityResultCallback
 import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
@@ -30,7 +31,7 @@ class SystemHandsModule : Module() {
     RegisterActivityContracts {
       cameraLauncher = registerForActivityResult(
         CameraCaptureContract(this@SystemHandsModule)
-      )
+      ) { _, _ -> }
     }
 
     AsyncFunction("setVolume") { stream: Int, level: Int ->
@@ -75,9 +76,12 @@ class SystemHandsModule : Module() {
 
       try {
         val success = suspendCancellableCoroutine<Boolean> { continuation ->
-          launcher.launch(CameraCaptureContractOptions(uri.toString())) { result ->
-            if (continuation.isActive) continuation.resume(result)
-          }
+          launcher.launch(
+            CameraCaptureContractOptions(uri.toString()),
+            ActivityResultCallback { result ->
+              if (continuation.isActive) continuation.resume(result)
+            }
+          )
           continuation.invokeOnCancellation {
             context.contentResolver.delete(uri, null, null)
           }
@@ -109,7 +113,6 @@ class SystemHandsModule : Module() {
       context.sendBroadcast(Intent(Intent.ACTION_MEDIA_BUTTON).apply { putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_UP, keyCode)) })
       mapOf("status" to "broadcast_sent", "verified" to false, "action" to action, "keyCode" to keyCode)
     }
-
     AsyncFunction("readContent") { uriString: String, maxBytes: Int ->
       val context = appContext.reactContext ?: error("Android context unavailable"); val uri = Uri.parse(uriString)
       if (uri.scheme != "content") return@AsyncFunction mapOf("status" to "unsupported_uri", "verified" to false)
