@@ -2,6 +2,9 @@ name: Repair pnpm lockfile
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - design/svetlana-ui-implementation-2026-08-28
 
 permissions:
   contents: write
