@@ -8,7 +8,8 @@ import { assertHandsExecutorsComplete, hasHandsExecutor, registerHandsExecutor }
 
 let initialized = false
 
-type UiActInput = { action: unknown; waitMs?: number; expectedText?: string; expectedPackage?: string; verifyStrategy?: 'ui_tree_change' | 'ui_target_state' | 'system_state_change' }
+type VerifyStrategy = 'ui_tree_change' | 'ui_target_state'
+type UiActInput = { action: unknown; waitMs?: number; expectedText?: string; expectedPackage?: string; verifyStrategy?: VerifyStrategy }
 function uiExecutor(type: string, defaults: Pick<UiActInput, 'waitMs' | 'verifyStrategy'>) {
   return async (args: Record<string, unknown>) => {
     const input = args as unknown as UiActInput
@@ -29,12 +30,12 @@ export function initHandsExecutors(): void {
   register('accessibility.type_text', uiExecutor('type_text', { waitMs: 500, verifyStrategy: 'ui_target_state' }))
   register('accessibility.clear_text', uiExecutor('clear_text', { waitMs: 800, verifyStrategy: 'ui_target_state' }))
   register('accessibility.select_text', uiExecutor('select_text', { waitMs: 800, verifyStrategy: 'ui_target_state' }))
-  register('accessibility.copy', uiExecutor('copy', { waitMs: 500, verifyStrategy: 'system_state_change' }))
+  register('accessibility.copy', uiExecutor('copy', { waitMs: 500, verifyStrategy: 'ui_target_state' }))
   register('accessibility.paste', uiExecutor('paste', { waitMs: 500, verifyStrategy: 'ui_target_state' }))
   register('accessibility.back', uiExecutor('back', { waitMs: 500, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.home', uiExecutor('home', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.recents', uiExecutor('recents', { waitMs: 700, verifyStrategy: 'ui_tree_change' }))
-  register('accessibility.press_global_action', async (args) => executeUiAction({ action: { type: 'press_key', key: args.key }, waitMs: 500, verifyStrategy: 'system_state_change' }))
+  register('accessibility.press_global_action', async (args) => executeUiAction({ action: { type: 'press_key', key: args.key }, waitMs: 500, verifyStrategy: 'ui_tree_change' }))
   register('accessibility.read_screen', async (args) => executeUiObserve(typeof args.maxNodes === 'number' ? args.maxNodes : undefined))
   register('accessibility.find_text', async (args) => executeFindNodes({ text: args.text }))
   register('accessibility.find_element', async (args) => executeFindNodes(args))
