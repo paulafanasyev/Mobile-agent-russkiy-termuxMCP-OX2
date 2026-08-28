@@ -1,12 +1,16 @@
-/** Real system-level Hands executors. No capability is promoted by this file; registry evidence remains authoritative. */
 import * as Linking from 'expo-linking'
 import * as IntentLauncher from 'expo-intent-launcher'
 import { Share, Platform } from 'react-native'
 import { z } from 'zod'
 
-export const openUrlHandsSchema = z.object({
-  url: z.string().url().max(4096),
-})
+// Hands may open external web resources, but executable URI schemes are not
+// accepted. This prevents javascript:/file:/intent: payloads from crossing
+// the Hands boundary.
+const safeWebUrl = z.string().url().max(4096).refine((value) => {
+  try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false }
+}, 'Only http:// and https:// URLs are allowed')
+
+export const openUrlHandsSchema = z.object({ url: safeWebUrl })
 
 export const openSettingsHandsSchema = z.object({
   action: z.string().regex(/^android\.settings\.[A-Z0-9_]+$/).optional(),
@@ -18,7 +22,7 @@ export const waitHandsSchema = z.object({
 
 export const shareHandsSchema = z.object({
   message: z.string().max(10000).optional(),
-  url: z.string().url().max(4096).optional(),
+  url: safeWebUrl.optional(),
   title: z.string().max(500).optional(),
 }).refine(v => v.message !== undefined || v.url !== undefined, 'share requires message or url')
 
@@ -45,10 +49,6 @@ export async function executeHandsWait(args: z.infer<typeof waitHandsSchema>) {
 
 export async function executeHandsShare(args: z.infer<typeof shareHandsSchema>) {
   const parsed = shareHandsSchema.parse(args)
-  const result = await Share.share({
-    message: parsed.message ?? parsed.url ?? '',
-    title: parsed.title,
-    url: parsed.url,
-  })
+  const result = await Share.share({ message: parsed.message ?? parsed.url ?? '', title: parsed.title, url: parsed.url })
   return { status: result.action === Share.sharedAction ? 'shared' : 'dismissed', action: result.action, verified: result.action === Share.sharedAction }
 }
