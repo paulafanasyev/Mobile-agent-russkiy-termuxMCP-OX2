@@ -7,29 +7,35 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
+import com.microsoft.cognitiveservices.speech.AudioConfig
+import com.microsoft.cognitiveservices.speech.ResultReason
+import com.microsoft.cognitiveservices.speech.SpeechConfig
+import com.microsoft.cognitiveservices.speech.SpeechSynthesisResult
+import com.microsoft.cognitiveservices.speech.SpeechSynthesizer
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.suspendCancellableCoroutine
-import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/** Android voice bridge for Svetlana. Recognition prefers offline engines when available. */
+/** Android voice bridge for Svetlana: Android recognition + Azure Speech viseme synthesis. */
 class VoiceModule : Module() {
   private var recognizer: SpeechRecognizer? = null
-  private var tts: TextToSpeech? = null
+  private var synthesizer: SpeechSynthesizer? = null
 
   override fun definition() = ModuleDefinition {
     Name("SvetlanaVoice")
+    Events("onVisemeReceived", "onSpeechCompleted", "onSpeechError")
 
     AsyncFunction("capabilities") {
       val context = appContext.reactContext ?: return@AsyncFunction mapOf("supported" to false)
       mapOf(
         "supported" to SpeechRecognizer.isRecognitionAvailable(context),
         "offlinePreferred" to true,
-        "ttsAvailable" to (TextToSpeech(context) { }.let { it.shutdown(); true }),
+        "ttsAvailable" to true,
+        "azureVisemeAvailable" to true,
         "language" to "ru-RU",
+        "sdk" to "azure-speech-1.51.0",
       )
     }
 
@@ -104,10 +110,7 @@ class VoiceModule : Module() {
           recognizer = SpeechRecognizer.createSpeechRecognizer(context)
           recognizer?.setRecognitionListener(listener)
           val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(
-              RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-              RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
-            )
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
@@ -123,31 +126,63 @@ class VoiceModule : Module() {
       true
     }
 
-    AsyncFunction("speak") { text: String ->
-      val context = appContext.reactContext ?: return@AsyncFunction false
-      if (tts == null) {
-        tts = TextToSpeech(context) { status ->
-          if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale("ru", "RU")
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "svetlana")
-          }
-        }
-      } else {
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "svetlana")
+    AsyncFunction("speak") { text: String, subscriptionKey: String, region: String ->
+      require(text.isNotBlank()) { "Speech text must not be blank" }
+      require(subscriptionKey.isNotBlank()) { "Azure Speech subscription key is required" }
+      require(region.isNotBlank()) { "Azure Speech region is required" }
+
+      synthesizer?.close()
+      synthesizer = null
+
+      val speechConfig = SpeechConfig.fromSubscription(subscriptionKey, region)
+      speechConfig.speechSynthesisLanguage = "ru-RU"
+      speechConfig.speechSynthesisVoiceName = "ru-RU-SvetlanaNeural"
+      val audioConfig = AudioConfig.fromDefaultSpeakerOutput()
+      val currentSynthesizer = SpeechSynthesizer(speechConfig, audioConfig)
+      synthesizer = currentSynthesizer
+
+      currentSynthesizer.visemeReceived.addEventListener { _, event ->
+        sendEvent(
+          "onVisemeReceived",
+          mapOf(
+            "audioOffset" to event.audioOffset,
+            "audioOffsetMs" to event.audioOffset / 10_000.0,
+            "visemeId" to event.visemeId,
+            "animation" to event.animation,
+          ),
+        )
       }
-      true
+
+      try {
+        val result: SpeechSynthesisResult = currentSynthesizer.SpeakTextAsync(text).get()
+        if (result.reason == ResultReason.SynthesizingAudioCompleted) {
+          sendEvent("onSpeechCompleted", mapOf("resultId" to result.resultId))
+          true
+        } else {
+          val details = result.errorDetails ?: "Azure Speech synthesis failed"
+          sendEvent("onSpeechError", mapOf("message" to details))
+          throw IllegalStateException(details)
+        }
+      } finally {
+        currentSynthesizer.close()
+        speechConfig.close()
+        audioConfig.close()
+        if (synthesizer === currentSynthesizer) synthesizer = null
+      }
     }
 
     AsyncFunction("stopSpeaking") {
-      tts?.stop()
+      synthesizer?.StopSpeakingAsync()?.get()
+      synthesizer?.close()
+      synthesizer = null
       true
     }
 
     OnDestroy {
       recognizer?.destroy()
       recognizer = null
-      tts?.shutdown()
-      tts = null
+      synthesizer?.close()
+      synthesizer = null
     }
   }
 }
