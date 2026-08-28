@@ -8,8 +8,8 @@ on:
 
 jobs:
   build-check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,8 +23,87 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.7'
+          cache: false
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-21 platforms;android-23 platforms;android-35 build-tools;35.0.0 ndk;28.0.13004108'
+
+      - name: Verify Android toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?ANDROID_HOME отсутствует}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/28.0.13004108"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
+          java -version
+          go version
+          sdkmanager --version
+          test -f "$ANDROID_HOME/platforms/android-21/android.jar"
+          test -f "$ANDROID_HOME/platforms/android-23/android.jar"
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/aapt2"
+          test -x "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+
+      - name: Build reproducible libbox.aar
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/logs"
+          bash scripts/build-libbox-android.sh 2>&1 | tee "$RUNNER_TEMP/logs/libbox-build.log"
+
+      - name: Verify libbox artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/native/libbox.aar
+          test -s build/native/libbox.aar.sha256
+          test -s build/native/sing-box-revision.txt
+          sha256sum -c build/native/libbox.aar.sha256
+          test "$(cat build/native/sing-box-revision.txt)" = "670d7a7693918b765a17c44aee5afb5d47ead390"
+          unzip -t build/native/libbox.aar >/dev/null
+
+      - name: Prepare local Maven libbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAVEN_DIR="build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0"
+          mkdir -p "$MAVEN_DIR"
+          cp build/native/libbox.aar "$MAVEN_DIR/libbox-1.0.0.aar"
+          cat > "$MAVEN_DIR/libbox-1.0.0.pom" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <project xmlns="http://maven.apache.org/POM/4.0.0"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>ru.mirsamozanyatykh</groupId>
+            <artifactId>libbox</artifactId>
+            <version>1.0.0</version>
+            <packaging>aar</packaging>
+          </project>
+          EOF
+          test -s "$MAVEN_DIR/libbox-1.0.0.aar"
+          test -s "$MAVEN_DIR/libbox-1.0.0.pom"
 
       - name: Install dependencies (frozen)
         run: pnpm install --frozen-lockfile
@@ -35,21 +114,37 @@ jobs:
       - name: TypeScript compile
         run: pnpm exec tsc --noEmit
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Expo prebuild
-        run: pnpm exec expo prebuild
+        run: pnpm exec expo prebuild --platform android --clean
 
       - name: Verify dependency manifests unchanged
         run: git diff --exit-code -- package.json pnpm-lock.yaml
 
+      - name: Configure Android SDK path
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
+          test -s android/local.properties
+
+      - name: Verify generated Gradle and libbox
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R "ru.mirsamozanyatykh:libbox:1.0.0" app/build.gradle
+          test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
+
       - name: Kotlin compile
         working-directory: android
-        run: ./gradlew :expo:compileDebugKotlin --stacktrace
+        run: ./gradlew :expo:compileDebugKotlin --stacktrace --console=plain
+
+      - name: Upload libbox diagnostics on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-build-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/logs/libbox-build.log
+            android/local.properties
+          if-no-files-found: warn
