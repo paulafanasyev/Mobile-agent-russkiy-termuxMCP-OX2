@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { openSettingsHandsSchema, openUrlHandsSchema } from './executors/system-hands-executors'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -27,5 +28,24 @@ describe('Hands native boundary', () => {
     expect(toolStart).toBeGreaterThanOrEqual(0)
     expect(approvalStart).toBeGreaterThanOrEqual(0)
     expect(executeStart).toBeGreaterThan(approvalStart)
+  })
+
+  it('rejects executable URL schemes at the Hands boundary', () => {
+    expect(openUrlHandsSchema.safeParse({ url: 'https://example.com' }).success).toBe(true)
+    for (const url of ['javascript:alert(1)', 'file:///etc/passwd', 'intent://settings']) {
+      expect(openUrlHandsSchema.safeParse({ url }).success).toBe(false)
+    }
+  })
+
+  it('accepts only bounded Android Settings action names', () => {
+    expect(openSettingsHandsSchema.safeParse({ action: 'android.settings.SETTINGS' }).success).toBe(true)
+    for (const action of [
+      'android.settings.SETTINGS:package=com.example',
+      'android.settings.SETTINGS package=com.example',
+      'android.settings.SETTINGS?package=com.example',
+      'intent://settings',
+    ]) {
+      expect(openSettingsHandsSchema.safeParse({ action }).success).toBe(false)
+    }
   })
 })
