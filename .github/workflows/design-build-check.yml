@@ -153,6 +153,34 @@ jobs:
           set -o pipefail
           ./gradlew assembleDebug --stacktrace --warning-mode all --console=plain 2>&1 | tee "$RUNNER_TEMP/logs/assemble-debug.log"
 
+      - name: Verify APK and generate release evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          mkdir -p "$RUNNER_TEMP/apk-evidence"
+          cp "$APK" "$RUNNER_TEMP/apk-evidence/ox2-debug.apk"
+          sha256sum "$APK" | tee "$RUNNER_TEMP/apk-evidence/ox2-debug.apk.sha256"
+          printf 'commit=%s\nrun_id=%s\nref=%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_REF_NAME" > "$RUNNER_TEMP/apk-evidence/build-metadata.txt"
+          if command -v aapt2 >/dev/null 2>&1; then
+            aapt2 dump badging "$APK" | tee "$RUNNER_TEMP/apk-evidence/aapt2-badging.txt"
+          else
+            "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | tee "$RUNNER_TEMP/apk-evidence/aapt2-badging.txt"
+          fi
+
+      - name: Upload APK evidence
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ox2-apk-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/apk-evidence/ox2-debug.apk
+            ${{ runner.temp }}/apk-evidence/ox2-debug.apk.sha256
+            ${{ runner.temp }}/apk-evidence/build-metadata.txt
+            ${{ runner.temp }}/apk-evidence/aapt2-badging.txt
+          if-no-files-found: error
+
       - name: Build structured failure report
         if: ${{ failure() }}
         shell: bash
