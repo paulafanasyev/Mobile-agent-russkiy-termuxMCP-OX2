@@ -12,17 +12,7 @@ const ORB: Record<SvetlanaOrbState, string> = {
   error: "#ef4444",
 };
 
-export function SvetlanaAvatar({
-  compact = false,
-  speaking = false,
-  visemeId,
-  state,
-}: {
-  compact?: boolean;
-  speaking?: boolean;
-  visemeId?: number | null;
-  state?: SvetlanaOrbState;
-}) {
+export function SvetlanaAvatar({ compact = false, speaking = false, visemeId, state }: { compact?: boolean; speaking?: boolean; visemeId?: number | null; state?: SvetlanaOrbState }) {
   const router = useRouter();
   const scheme = useColorScheme();
   const size = compact ? SVETLANA_DESIGN.compactSize : SVETLANA_DESIGN.fullSize;
@@ -58,7 +48,6 @@ export function SvetlanaAvatar({
       animation.start();
       return () => animation.stop();
     }
-
     const shape = shapeForViseme(visemeId);
     Animated.parallel([
       Animated.timing(mouthWidth, { toValue: shape.width, duration: 45, useNativeDriver: false }),
@@ -71,31 +60,15 @@ export function SvetlanaAvatar({
   const orb = ORB[resolvedState];
   const background = scheme === "dark" ? "#17111f" : "#faf8f5";
   const border = scheme === "dark" ? "#31223f" : "#e8e3dc";
+  const isListening = resolvedState === "listening";
 
   return (
-    <Pressable
-      accessibilityLabel="Открыть голосовой чат Светланы"
-      onPress={() => router.push("/svetlana")}
-      style={({ pressed }) => [styles.button, { width: size, height: size }, pressed && styles.pressed]}
-    >
+    <Pressable accessibilityLabel="Открыть голосовой чат Светланы" onPress={() => router.push("/svetlana")} style={({ pressed }) => [styles.button, { width: size, height: size }, pressed && styles.pressed]}>
       <Animated.View pointerEvents="none" style={[styles.orb, { width: size, height: size, borderColor: orb, shadowColor: orb, transform: [{ scale: orbPulse }] }]} />
       <View style={[styles.faceFrame, { width: size - 8, height: size - 8, backgroundColor: background, borderColor: border }]}>
-        <Image
-          source={require("../../../assets/images/svetlana-approved.jpg")}
-          accessibilityLabel="Утверждённый портрет Светланы"
-          resizeMode="cover"
-          style={[styles.portrait, { width: size - 12, height: size - 12 }]}
-        />
-        <Animated.View
-          nativeID={SVETLANA_DESIGN.mouthLayerId}
-          pointerEvents="none"
-          style={[styles.mouth, {
-            width: mouthWidth,
-            borderRadius: mouthRadius,
-            transform: [{ scaleX: mouthScaleX }, { scaleY: mouthScale }],
-            opacity: visemeId == null ? (speaking ? 0.18 : 0) : 0.28,
-          }]}
-        />
+        <Image source={require("../../../assets/images/svetlana-approved.jpg")} accessibilityLabel="Утверждённый портрет Светланы" resizeMode="cover" style={[styles.portrait, { width: size - 12, height: size - 12 }]} />
+        <Animated.View nativeID={SVETLANA_DESIGN.mouthLayerId} pointerEvents="none" accessibilityLabel={visemeId == null ? "Рот Светланы" : `Viseme ${visemeId}`} style={[styles.mouth, { width: mouthWidth, borderRadius: mouthRadius, transform: [{ scaleX: mouthScaleX }, { scaleY: mouthScale }], opacity: visemeId == null ? (speaking ? 0.18 : 0) : 0.28 }]} />
+        <View pointerEvents="none" accessibilityLabel={isListening ? "Микрофон активен" : "Микрофон неактивен"} style={[styles.micIndicator, { opacity: isListening ? 1 : 0.7, backgroundColor: isListening ? "#38bdf8" : border }]} />
       </View>
     </Pressable>
   );
@@ -108,4 +81,5 @@ const styles = StyleSheet.create({
   portrait: { borderRadius: 999 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
   mouth: { position: "absolute", left: "50%", top: "51%", height: 5, backgroundColor: "#8f4f5d", marginLeft: -6.5, marginTop: -2.5 },
+  micIndicator: { position: "absolute", right: 7, bottom: 7, width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: "#faf8f5" },
 });
