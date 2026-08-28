@@ -1,0 +1,49 @@
+name: Design Build Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - design/svetlana-ui-implementation-2026-08-28
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+          run_install: false
+
+      - name: Install dependencies (frozen)
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript compile
+        run: pnpm exec tsc --noEmit
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Expo prebuild
+        run: pnpm exec expo prebuild
+
+      - name: Kotlin compile
+        working-directory: android
+        run: ./gradlew :expo:compileDebugKotlin --stacktrace
