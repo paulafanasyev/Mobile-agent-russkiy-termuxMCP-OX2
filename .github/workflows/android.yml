@@ -55,8 +55,8 @@ jobs:
 
           if [ -s assets/images/svetlana-approved.jpg ]; then
             actual_sha="$(sha256sum assets/images/svetlana-approved.jpg | awk '{print $1}')"
-            expected_sha='b55dd099a0fdea48810986f2a1fec2db557b0430d6906dea8dce263864b3dc63'
-            if [ "$actual_sha" = "$expected_sha" ]; then
+            expected_sha="$(sed -n 's/^[[:space:]]*assetSha256: "\([0-9a-fA-F]*\)".*/\1/p' src/components/svetlana/svetlana-design.ts)"
+            if [ -n "$expected_sha" ] && [ "$actual_sha" = "$expected_sha" ]; then
               echo "PASS: approved portrait SHA256 $actual_sha"
             else
               echo "FAIL: approved portrait SHA256 mismatch — expected=$expected_sha actual=$actual_sha"
