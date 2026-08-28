@@ -18,9 +18,7 @@ export function SvetlanaAvatar({
   const size = compact ? 54 : 76;
   const mouthScale = useRef(new Animated.Value(0.35)).current;
   const mouthWidth = useRef(new Animated.Value(13)).current;
-  const mouthHeight = useRef(new Animated.Value(5)).current;
   const mouthScaleX = useRef(new Animated.Value(1)).current;
-  const mouthScaleY = useRef(new Animated.Value(1)).current;
   const mouthRadius = useRef(new Animated.Value(8)).current;
 
   useEffect(() => {
@@ -49,13 +47,11 @@ export function SvetlanaAvatar({
     const shape = shapeForViseme(visemeId);
     Animated.parallel([
       Animated.timing(mouthWidth, { toValue: shape.width, duration: 45, useNativeDriver: false }),
-      Animated.timing(mouthHeight, { toValue: shape.height, duration: 45, useNativeDriver: false }),
       Animated.timing(mouthScaleX, { toValue: shape.scaleX, duration: 45, useNativeDriver: false }),
-      Animated.timing(mouthScaleY, { toValue: shape.scaleY, duration: 45, useNativeDriver: false }),
       Animated.timing(mouthRadius, { toValue: shape.radius, duration: 45, useNativeDriver: false }),
-      Animated.timing(mouthScale, { toValue: 1, duration: 45, useNativeDriver: true }),
+      Animated.timing(mouthScale, { toValue: shape.scaleY, duration: 45, useNativeDriver: true }),
     ]).start();
-  }, [mouthScale, mouthWidth, mouthHeight, mouthScaleX, mouthScaleY, mouthRadius, speaking, visemeId]);
+  }, [mouthScale, mouthWidth, mouthScaleX, mouthRadius, speaking, visemeId]);
 
   return (
     <Pressable
@@ -90,9 +86,8 @@ export function SvetlanaAvatar({
           styles.mouth,
           {
             width: mouthWidth,
-            height: mouthHeight,
             borderRadius: mouthRadius,
-            transform: [{ scaleX: mouthScaleX }, { scaleY: mouthScaleY }, { scaleY: mouthScale }],
+            transform: [{ scaleX: mouthScaleX }, { scaleY: mouthScale }],
             opacity: speaking ? 1 : 0.75,
             marginLeft: -6.5,
             marginTop: -2.5,
@@ -122,6 +117,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: "50%",
     top: "69%",
+    height: 5,
     backgroundColor: "#9f4f65",
   },
   micBadge: {
