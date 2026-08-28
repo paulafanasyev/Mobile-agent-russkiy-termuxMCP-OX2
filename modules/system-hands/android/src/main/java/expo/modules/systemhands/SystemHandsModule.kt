@@ -18,6 +18,8 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 class SystemHandsModule : Module() {
   private var cameraLauncher: AppContextActivityResultLauncher<CameraCaptureContractOptions, Boolean>? = null
@@ -28,9 +30,7 @@ class SystemHandsModule : Module() {
     RegisterActivityContracts {
       cameraLauncher = registerForActivityResult(
         CameraCaptureContract(this@SystemHandsModule)
-      ) { _, _ ->
-        // The suspendable launch() call below receives the result directly.
-      }
+      )
     }
 
     AsyncFunction("setVolume") { stream: Int, level: Int ->
@@ -74,7 +74,14 @@ class SystemHandsModule : Module() {
       }
 
       try {
-        val success = launcher.launch(CameraCaptureContractOptions(uri.toString()))
+        val success = suspendCancellableCoroutine<Boolean> { continuation ->
+          launcher.launch(CameraCaptureContractOptions(uri.toString())) { result ->
+            if (continuation.isActive) continuation.resume(result)
+          }
+          continuation.invokeOnCancellation {
+            context.contentResolver.delete(uri, null, null)
+          }
+        }
         if (!success) {
           context.contentResolver.delete(uri, null, null)
           return@Coroutine mapOf("status" to "camera_cancelled", "verified" to false, "uri" to uri.toString())
