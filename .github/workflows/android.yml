@@ -111,6 +111,28 @@ jobs:
         run: pnpm install --no-frozen-lockfile
       - name: Expo prebuild
         run: pnpm exec expo prebuild --platform android --clean
+      - name: Gate утверждённого дизайна Светланы
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s src/components/svetlana/svetlana-design.ts
+          grep -q '2026-08-28-approved' src/components/svetlana/svetlana-design.ts
+          grep -q 'realistic-svg' src/components/svetlana/svetlana-design.ts
+          grep -q 'fullSize: 180' src/components/svetlana/svetlana-design.ts
+          grep -q 'compactSize: 80' src/components/svetlana/svetlana-design.ts
+          grep -q 'mouthLayerId: "svetlanaMouth"' src/components/svetlana/svetlana-design.ts
+          grep -q 'SvetlanaOrbState' src/components/svetlana/svetlana-avatar.tsx
+          grep -q 'useColorScheme' src/components/svetlana/svetlana-avatar.tsx
+          grep -q 'SVETLANA_DESIGN.compactSize' src/components/svetlana/svetlana-avatar.tsx
+          grep -q 'nativeID={SVETLANA_DESIGN.mouthLayerId}' src/components/svetlana/svetlana-avatar.tsx
+          echo 'APPROVED_SVETLANA_DESIGN=PASS' >> "$GITHUB_STEP_SUMMARY"
+      - name: Gate packaging configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '"packagingOptions"' app.json
+          grep -q 'META-INF/INDEX.LIST' app.json
+          grep -R -n 'META-INF/INDEX.LIST' android/app/build.gradle android/app/build.gradle.kts 2>/dev/null || true
       - name: Зафиксировать Android SDK для Gradle
         shell: bash
         run: |
