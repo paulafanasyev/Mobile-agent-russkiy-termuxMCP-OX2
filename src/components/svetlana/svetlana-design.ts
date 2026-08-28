@@ -1,6 +1,8 @@
 export const SVETLANA_DESIGN = {
   version: "2026-08-28-approved",
-  primaryFace: "realistic-svg",
+  primaryFace: "realistic-photo",
+  assetPath: "assets/images/svetlana-approved.jpg",
+  assetSha256: "b55dd099a0fdea48810986f2a1fec2db557b0430d6906dea8dce263864b3dc63",
   defaultTheme: "light",
   themes: ["light", "dark"],
   fullSize: 180,
