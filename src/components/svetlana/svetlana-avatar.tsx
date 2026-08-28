@@ -3,33 +3,59 @@ import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View, Animated, Easing } from "react-native";
 import { useEffect, useRef } from "react";
 import Svg, { Circle, Defs, LinearGradient, Path, Stop } from "react-native-svg";
+import { shapeForViseme } from "./viseme-timeline";
 
-export function SvetlanaAvatar({ compact = false, speaking = false }: { compact?: boolean; speaking?: boolean }) {
+export function SvetlanaAvatar({
+  compact = false,
+  speaking = false,
+  visemeId,
+}: {
+  compact?: boolean;
+  speaking?: boolean;
+  visemeId?: number | null;
+}) {
   const router = useRouter();
   const size = compact ? 54 : 76;
   const mouthScale = useRef(new Animated.Value(0.35)).current;
+  const mouthWidth = useRef(new Animated.Value(13)).current;
+  const mouthHeight = useRef(new Animated.Value(5)).current;
+  const mouthScaleX = useRef(new Animated.Value(1)).current;
+  const mouthScaleY = useRef(new Animated.Value(1)).current;
+  const mouthRadius = useRef(new Animated.Value(8)).current;
 
   useEffect(() => {
-    if (!speaking) {
-      Animated.timing(mouthScale, {
-        toValue: 0.35,
-        duration: 120,
-        useNativeDriver: true,
-      }).start();
-      return;
+    if (visemeId == null) {
+      if (!speaking) {
+        Animated.timing(mouthScale, {
+          toValue: 0.35,
+          duration: 120,
+          useNativeDriver: true,
+        }).start();
+        return;
+      }
+
+      const animation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(mouthScale, { toValue: 1, duration: 110, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(mouthScale, { toValue: 0.45, duration: 90, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(mouthScale, { toValue: 0.8, duration: 105, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(mouthScale, { toValue: 0.35, duration: 120, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ]),
+      );
+      animation.start();
+      return () => animation.stop();
     }
 
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(mouthScale, { toValue: 1, duration: 110, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(mouthScale, { toValue: 0.45, duration: 90, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(mouthScale, { toValue: 0.8, duration: 105, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(mouthScale, { toValue: 0.35, duration: 120, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [mouthScale, speaking]);
+    const shape = shapeForViseme(visemeId);
+    Animated.parallel([
+      Animated.timing(mouthWidth, { toValue: shape.width, duration: 45, useNativeDriver: false }),
+      Animated.timing(mouthHeight, { toValue: shape.height, duration: 45, useNativeDriver: false }),
+      Animated.timing(mouthScaleX, { toValue: shape.scaleX, duration: 45, useNativeDriver: false }),
+      Animated.timing(mouthScaleY, { toValue: shape.scaleY, duration: 45, useNativeDriver: false }),
+      Animated.timing(mouthRadius, { toValue: shape.radius, duration: 45, useNativeDriver: false }),
+      Animated.timing(mouthScale, { toValue: 1, duration: 45, useNativeDriver: true }),
+    ]).start();
+  }, [mouthScale, mouthWidth, mouthHeight, mouthScaleX, mouthScaleY, mouthRadius, speaking, visemeId]);
 
   return (
     <Pressable
@@ -62,7 +88,15 @@ export function SvetlanaAvatar({ compact = false, speaking = false }: { compact?
         pointerEvents="none"
         style={[
           styles.mouth,
-          { transform: [{ scaleY: mouthScale }], opacity: speaking ? 1 : 0.75 },
+          {
+            width: mouthWidth,
+            height: mouthHeight,
+            borderRadius: mouthRadius,
+            transform: [{ scaleX: mouthScaleX }, { scaleY: mouthScaleY }, { scaleY: mouthScale }],
+            opacity: speaking ? 1 : 0.75,
+            marginLeft: -6.5,
+            marginTop: -2.5,
+          },
         ]}
       />
       <View style={styles.micBadge}>
@@ -86,13 +120,8 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
   mouth: {
     position: "absolute",
-    width: 13,
-    height: 5,
     left: "50%",
     top: "69%",
-    marginLeft: -6.5,
-    marginTop: -2.5,
-    borderRadius: 8,
     backgroundColor: "#9f4f65",
   },
   micBadge: {
