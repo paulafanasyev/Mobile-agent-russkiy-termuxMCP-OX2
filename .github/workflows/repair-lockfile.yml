@@ -1,0 +1,46 @@
+name: Repair pnpm lockfile
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: design/svetlana-ui-implementation-2026-08-28
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Repair lockfile
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Verify only lockfile changed
+        run: |
+          git diff --name-only
+          test "$(git diff --name-only)" = "pnpm-lock.yaml"
+
+      - name: Commit repaired lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          git commit -m "chore: sync pnpm lockfile with package.json"
+          git push origin HEAD:design/svetlana-ui-implementation-2026-08-28
