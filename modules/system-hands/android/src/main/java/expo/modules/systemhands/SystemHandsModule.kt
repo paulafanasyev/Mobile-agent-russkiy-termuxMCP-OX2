@@ -31,8 +31,8 @@ class SystemHandsModule : Module() {
     RegisterActivityContracts {
       cameraLauncher = registerForActivityResult(
         CameraCaptureContract(this@SystemHandsModule)
-      ) { _, success ->
-        resolveCameraResult(success)
+      ) { input, result ->
+        resolveCameraResult(result)
       }
     }
 
