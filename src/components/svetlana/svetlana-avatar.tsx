@@ -1,11 +1,35 @@
 import { Mic } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View, Animated, Easing } from "react-native";
+import { useEffect, useRef } from "react";
 import Svg, { Circle, Defs, LinearGradient, Path, Stop } from "react-native-svg";
 
-export function SvetlanaAvatar({ compact = false }: { compact?: boolean }) {
+export function SvetlanaAvatar({ compact = false, speaking = false }: { compact?: boolean; speaking?: boolean }) {
   const router = useRouter();
   const size = compact ? 54 : 76;
+  const mouthScale = useRef(new Animated.Value(0.35)).current;
+
+  useEffect(() => {
+    if (!speaking) {
+      Animated.timing(mouthScale, {
+        toValue: 0.35,
+        duration: 120,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(mouthScale, { toValue: 1, duration: 110, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(mouthScale, { toValue: 0.45, duration: 90, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(mouthScale, { toValue: 0.8, duration: 105, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(mouthScale, { toValue: 0.35, duration: 120, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [mouthScale, speaking]);
 
   return (
     <Pressable
@@ -34,6 +58,13 @@ export function SvetlanaAvatar({ compact = false }: { compact?: boolean }) {
         <Path d="M25 46c-4 3-5 10-2 14" fill="none" stroke="#8b5cf6" strokeWidth="5" strokeLinecap="round" />
         <Path d="M75 46c4 3 5 10 2 14" fill="none" stroke="#8b5cf6" strokeWidth="5" strokeLinecap="round" />
       </Svg>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.mouth,
+          { transform: [{ scaleY: mouthScale }], opacity: speaking ? 1 : 0.75 },
+        ]}
+      />
       <View style={styles.micBadge}>
         <Mic color="#ffffff" size={compact ? 13 : 16} strokeWidth={2.5} />
       </View>
@@ -53,6 +84,17 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
+  mouth: {
+    position: "absolute",
+    width: 13,
+    height: 5,
+    left: "50%",
+    top: "69%",
+    marginLeft: -6.5,
+    marginTop: -2.5,
+    borderRadius: 8,
+    backgroundColor: "#9f4f65",
+  },
   micBadge: {
     position: "absolute",
     right: 0,
