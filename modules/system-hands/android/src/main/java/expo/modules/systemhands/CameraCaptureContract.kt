@@ -10,12 +10,11 @@ import expo.modules.kotlin.providers.AppContextProvider
 import java.io.Serializable
 
 /**
- * Expo Modules Core-compatible camera contract. It deliberately uses the
- * AppContext activity-result API instead of androidx ActivityResultLauncher,
- * because Expo SDK 57 owns registration/restoration of activity results.
+ * Expo Modules Core-compatible camera contract. Expo SDK 57 owns activity-result
+ * registration and restoration, so this module must use AppContextActivityResultContract.
  */
 internal class CameraCaptureContract(
-  private val appContextProvider: AppContextProvider
+  @Suppress("UNUSED_PARAMETER") private val appContextProvider: AppContextProvider
 ) : AppContextActivityResultContract<CameraCaptureContractOptions, Boolean> {
   override fun createIntent(context: Context, input: CameraCaptureContractOptions): Intent =
     Intent(MediaStore.ACTION_IMAGE_CAPTURE)
