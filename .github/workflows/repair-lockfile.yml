@@ -36,11 +36,35 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Verify only lockfile changed
+        id: verify
+        shell: bash
         run: |
-          git diff --name-only
-          test "$(git diff --name-only)" = "pnpm-lock.yaml"
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          printf '%s\n' "=== CHANGED FILES ==="
+          if [[ -n "$changed" ]]; then
+            printf '%s\n' "$changed"
+          else
+            echo "(none)"
+          fi
+
+          if [[ -z "$changed" ]]; then
+            echo "No lockfile repair was necessary."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$changed" != "pnpm-lock.yaml" ]]; then
+            echo "Unexpected files changed by pnpm install:" >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          fi
+
+          echo "Lockfile repair produced the expected single-file change."
+          echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Commit repaired lockfile
+        if: steps.verify.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
