@@ -16,8 +16,9 @@ const ORB: Record<SvetlanaOrbState, string> = {
 export function SvetlanaAvatar({ compact = false, speaking = false, visemeId, state }: { compact?: boolean; speaking?: boolean; visemeId?: number | null; state?: SvetlanaOrbState }) {
   const router = useRouter();
   const scheme = useColorScheme();
-  const liveVisemeId = useSvetlanaVisemes(speaking);
-  const effectiveVisemeId = visemeId ?? liveVisemeId;
+  const timelineShape = useSvetlanaVisemes(speaking);
+  const explicitShape = visemeId == null ? null : shapeForViseme(visemeId);
+  const mouthShape = explicitShape ?? timelineShape;
   const size = compact ? SVETLANA_DESIGN.compactSize : SVETLANA_DESIGN.fullSize;
   const resolvedState: SvetlanaOrbState = state ?? (speaking ? "speaking" : "idle");
   const orbPulse = useRef(new Animated.Value(1)).current;
@@ -37,28 +38,17 @@ export function SvetlanaAvatar({ compact = false, speaking = false, visemeId, st
   }, [orbPulse, resolvedState]);
 
   useEffect(() => {
-    if (effectiveVisemeId == null) {
-      if (!speaking) {
-        Animated.timing(mouthScale, { toValue: 0.35, duration: 120, useNativeDriver: true }).start();
-        return;
-      }
-      const animation = Animated.loop(Animated.sequence([
-        Animated.timing(mouthScale, { toValue: 1, duration: 110, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(mouthScale, { toValue: 0.45, duration: 90, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(mouthScale, { toValue: 0.8, duration: 105, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(mouthScale, { toValue: 0.35, duration: 120, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]));
-      animation.start();
-      return () => animation.stop();
+    if (!mouthShape) {
+      Animated.timing(mouthScale, { toValue: speaking ? 0.45 : 0.35, duration: 120, useNativeDriver: true }).start();
+      return;
     }
-    const shape = shapeForViseme(effectiveVisemeId);
     Animated.parallel([
-      Animated.timing(mouthWidth, { toValue: shape.width, duration: 45, useNativeDriver: false }),
-      Animated.timing(mouthScaleX, { toValue: shape.scaleX, duration: 45, useNativeDriver: false }),
-      Animated.timing(mouthRadius, { toValue: shape.radius, duration: 45, useNativeDriver: false }),
-      Animated.timing(mouthScale, { toValue: shape.scaleY, duration: 45, useNativeDriver: true }),
+      Animated.timing(mouthWidth, { toValue: mouthShape.width, duration: 45, useNativeDriver: false }),
+      Animated.timing(mouthScaleX, { toValue: mouthShape.scaleX, duration: 45, useNativeDriver: false }),
+      Animated.timing(mouthRadius, { toValue: mouthShape.radius, duration: 45, useNativeDriver: false }),
+      Animated.timing(mouthScale, { toValue: mouthShape.scaleY, duration: 45, useNativeDriver: true }),
     ]).start();
-  }, [effectiveVisemeId, mouthScale, mouthWidth, mouthRadius, mouthScaleX, speaking]);
+  }, [mouthShape, mouthScale, mouthWidth, mouthRadius, mouthScaleX, speaking]);
 
   const orb = ORB[resolvedState];
   const background = scheme === "dark" ? "#17111f" : "#faf8f5";
@@ -70,7 +60,7 @@ export function SvetlanaAvatar({ compact = false, speaking = false, visemeId, st
       <Animated.View pointerEvents="none" style={[styles.orb, { width: size, height: size, borderColor: orb, shadowColor: orb, transform: [{ scale: orbPulse }] }]} />
       <View style={[styles.faceFrame, { width: size - 8, height: size - 8, backgroundColor: background, borderColor: border }]}>
         <Image source={require("../../../assets/images/svetlana-approved.jpg")} accessibilityLabel="Утверждённый портрет Светланы" resizeMode="cover" style={[styles.portrait, { width: size - 12, height: size - 12 }]} />
-        <Animated.View nativeID={SVETLANA_DESIGN.mouthLayerId} pointerEvents="none" accessibilityLabel={effectiveVisemeId == null ? "Рот Светланы" : `Viseme ${effectiveVisemeId}`} style={[styles.mouth, { width: mouthWidth, borderRadius: mouthRadius, transform: [{ scaleX: mouthScaleX }, { scaleY: mouthScale }], opacity: effectiveVisemeId == null ? (speaking ? 0.18 : 0) : 0.28 }]} />
+        <Animated.View nativeID={SVETLANA_DESIGN.mouthLayerId} pointerEvents="none" accessibilityLabel={mouthShape ? "Висема Светланы" : "Рот Светланы"} style={[styles.mouth, { width: mouthWidth, borderRadius: mouthRadius, transform: [{ scaleX: mouthScaleX }, { scaleY: mouthScale }], opacity: mouthShape ? 0.28 : speaking ? 0.18 : 0 }]} />
         <View pointerEvents="none" accessibilityLabel={isListening ? "Микрофон активен" : "Микрофон неактивен"} style={[styles.micIndicator, { opacity: isListening ? 1 : 0.7, backgroundColor: isListening ? "#38bdf8" : border }]} />
       </View>
     </Pressable>
