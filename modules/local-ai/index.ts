@@ -22,6 +22,7 @@ type NativeSvetlanaVoice = {
   listen(): Promise<string>;
   stopListening(): Promise<boolean>;
   speak(text: string, subscriptionKey: string, region: string): Promise<boolean>;
+  speakOffline(text: string): Promise<boolean>;
   stopSpeaking(): Promise<boolean>;
   addListener(eventName: string, listener: (event: SvetlanaVoiceEvent) => void): { remove(): void };
 };
@@ -57,8 +58,15 @@ export const SvetlanaVoice = {
   stopSpeaking: () => NativeSvetlanaVoice.stopSpeaking(),
   addListener: (eventName: string, listener: (event: SvetlanaVoiceEvent) => void) => NativeSvetlanaVoice.addListener(eventName, listener),
   speak: async (text: string) => {
-    const credentials = await getAzureSpeechCredentials();
-    return NativeSvetlanaVoice.speak(text, credentials.subscriptionKey, credentials.region);
+    try {
+      const credentials = await getAzureSpeechCredentials();
+      return await NativeSvetlanaVoice.speak(text, credentials.subscriptionKey, credentials.region);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Azure Speech не настроен")) {
+        return NativeSvetlanaVoice.speakOffline(text);
+      }
+      throw error;
+    }
   },
 };
 
