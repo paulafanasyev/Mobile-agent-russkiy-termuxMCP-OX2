@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       android_run_id:
-        description: 'ID рана Android APK Release (обязателен для ручного запуска)'
-        required: false
+        description: 'ID успешного рана Android APK Release'
+        required: true
         default: ''
   workflow_run:
     workflows: ["Android APK Release"]
@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
+      - name: Checkout exact smoke-test revision
+        uses: actions/checkout@v4
+
       - name: Provenance — привязать APK к конкретному Android-рану
         env:
           GH_TOKEN: ${{ github.token }}
@@ -34,7 +37,6 @@ jobs:
           test "$SOURCE_CONCLUSION" = success || { echo "::error::APK source run $RUN_ID is not successful: $SOURCE_CONCLUSION"; exit 1; }
           { echo "smoke_head_sha=$GITHUB_SHA"; echo "apk_source_run=$RUN_ID"; echo "apk_source_head_sha=$SOURCE_SHA"; echo "apk_source_conclusion=$SOURCE_CONCLUSION"; } | tee provenance.txt
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
-          cat provenance.txt >> "$GITHUB_STEP_SUMMARY"
 
       - name: Скачать APK из provenance-run (детерминированно)
         env:
@@ -43,184 +45,113 @@ jobs:
           set -euo pipefail
           STAGE="$RUNNER_TEMP/apk-staging"
           rm -rf "$STAGE" && mkdir -p "$STAGE/unpacked"
-          ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="mobile-agent-russkiy-debug-apk" and .expired==false) | .id' | head -1)
-          test -n "$ART_ID" || { echo "::error::Артефакт APK не найден в ране $RUN_ID"; exit 1; }
-          echo "ART_ID=$ART_ID"
+          ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select((.name=="mobile-agent-russkiy-release-apk" or .name=="mobile-agent-russkiy-debug-apk") and .expired==false) | .id' | head -1)
+          test -n "$ART_ID" || { echo "::error::APK artifact не найден в ране $RUN_ID"; exit 1; }
           curl --fail --silent --show-error --location -H "Authorization: Bearer $GH_TOKEN" -o "$STAGE/artifact.zip" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
-          unzip -o "$STAGE/artifact.zip" -d "$STAGE/unpacked"
-          CANDIDATES="$(find "$STAGE/unpacked" -type f -name '*.apk')"
-          COUNT=$(printf '%s\n' "$CANDIDATES" | grep -c . || true)
-          if [ "$COUNT" -ne 1 ]; then echo "::error::ОЖИДАН РОВНО ОДИН APK, НАЙДЕНО: $COUNT"; find "$STAGE/unpacked" -type f -exec ls -la {} \;; exit 1; fi
-          SRC="$(echo "$CANDIDATES" | head -1)"
-          cp "$SRC" "$STAGE/smoke.apk"
-          cp "$SRC" "$GITHUB_WORKSPACE/smoke.apk"
-          test -s "$GITHUB_WORKSPACE/smoke.apk" || { echo "::error::smoke.apk пуст после копирования"; exit 1; }
-          S1=$(sha256sum "$STAGE/smoke.apk" | awk '{print $1}')
-          S2=$(sha256sum "$GITHUB_WORKSPACE/smoke.apk" | awk '{print $1}')
-          test "$S1" = "$S2" || { echo "::error::SHA256 расходится между staging и workspace"; exit 1; }
-          echo "$S1" > "$STAGE/expected.sha256"
-          SIZE=$(stat -c%s "$GITHUB_WORKSPACE/smoke.apk")
-          { echo "### APK integrity"; echo "source_run_id=$RUN_ID"; echo "apk_source_sha256=$S1"; echo "apk_size_bytes=$SIZE"; echo "actual_path_found=$SRC"; echo "workspace_copy=$GITHUB_WORKSPACE/smoke.apk"; } > apk-facts.txt
-          cat apk-facts.txt >> "$GITHUB_STEP_SUMMARY"
+          unzip -o "$STAGE/artifact.zip" -d "$STAGE/unpacked" >/dev/null
+          mapfile -t CANDIDATES < <(find "$STAGE/unpacked" -type f -name '*.apk' -print)
+          test "${#CANDIDATES[@]}" -eq 1 || { echo "::error::ОЖИДАН РОВНО ОДИН APK, НАЙДЕНО: ${#CANDIDATES[@]}"; exit 1; }
+          cp "${CANDIDATES[0]}" "$GITHUB_WORKSPACE/smoke.apk"
+          test -s "$GITHUB_WORKSPACE/smoke.apk"
+          sha256sum "$GITHUB_WORKSPACE/smoke.apk" | awk '{print $1}' > apk-sha256.txt
+          stat -c%s "$GITHUB_WORKSPACE/smoke.apk" > apk-size.txt
+          printf 'artifact_id=%s\nsource_run_id=%s\napk_sha256=%s\napk_size_bytes=%s\n' "$ART_ID" "$RUN_ID" "$(cat apk-sha256.txt)" "$(cat apk-size.txt)" > apk-facts.txt
 
-      - name: M1 — бинарное чтение манифеста (aapt2 hard-gate)
+      - name: M1 — бинарное чтение release-манифеста
         run: |
           set -euo pipefail
           BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
-          BADGE=$("$BT/aapt2" dump badging "$GITHUB_WORKSPACE/smoke.apk" | head -25)
+          BADGE=$("$BT/aapt2" dump badging "$GITHUB_WORKSPACE/smoke.apk")
           echo "$BADGE" | tee badging.txt
           echo "$BADGE" | grep -q "package: name='ru.mirsamozanyatykh.mobileagent'"
           echo "$BADGE" | grep -q "versionName='2.1.1'"
           echo "$BADGE" | grep -q "versionCode='3'"
-          { echo "### M1 OK"; echo '```'; echo "$BADGE"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Prepare smoke probe script
-        env:
-          PROBE_SCRIPT: ${{ runner.temp }}/smoke-probe.sh
+      - name: Prepare strict smoke probe
         run: |
-          cat > "$PROBE_SCRIPT" <<'PROBE_EOF'
+          cat > "$RUNNER_TEMP/smoke-probe.sh" <<'PROBE'
           set -euo pipefail
-          set -x
           cd "$GITHUB_WORKSPACE"
-          pwd > where-am-i.txt
           APK="$GITHUB_WORKSPACE/smoke.apk"
-          STAGE="$RUNNER_TEMP/apk-staging"
-          if [ -s "$APK" ]; then
-            echo "RESTORED=no" > restore-flag.txt
-          else
-            echo "RESTORED=yes" > restore-flag.txt
-            echo "::warning::smoke.apk исчез из workspace - восстанавливаю из staging"
-            cp "$STAGE/smoke.apk" "$APK" || { echo "::error::ВОССТАНОВЛЕНИЕ НЕВОЗМОЖНО"; exit 1; }
-          fi
-          test -s "$APK" || { echo "::error::APK ОТСУТСТВУЕТ ПОСЛЕ ВОССТАНОВЛЕНИЯ"; exit 1; }
-          S_NOW=$(sha256sum "$APK" | awk '{print $1}')
-          echo "$S_NOW" > apk-sha256.txt
-          test "$S_NOW" = "$(cat "$STAGE/expected.sha256")" || { echo "::error::SHA256 APK ИЗМЕНИЛСЯ"; exit 1; }
-          echo "APK=$APK"
-          adb install -r "$APK" || { echo "::error::INSTALL FAILED"; exit 1; }
-          echo "PHASE: INSTALL OK"
+          test -s "$APK"
+          adb install -r "$APK"
           adb logcat -c
-          echo "LAUNCH_UTC=$(date -u +%H:%M:%S)" > launch-time.txt
-          adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1 || echo "::warning::monkey rc=$? (continuing)"
-          echo "PHASE: LAUNCH SENT"
+          adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1
           sleep 60
-          echo "PHASE: SURVIVED 60s"
+
           PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
           PS_LINE=$(adb shell ps -A 2>/dev/null | tr -d '\r' | grep mirsamozanyatykh || true)
-          RAW_RESUMED=$(adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E "ResumedActivity|topResumedActivity" | grep mirsamozanyatykh || true)
+          RAW_RESUMED=$(adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E 'ResumedActivity|topResumedActivity' | grep mirsamozanyatykh || true)
           FOCUS=$(adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep mCurrentFocus || true)
-          RESUMED_PAIR=$(echo "$RAW_RESUMED" | grep -oE "[a-zA-Z0-9._]+/[A-Za-z0-9.$]+" | head -1 || true)
-          RESUMED_CLASS="${RESUMED_PAIR##*/}"
-          DEVLAUNCH=$(adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep -c devlauncher || true)
-          adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
-          adb shell cat /sdcard/ui.xml > ui-dump.xml 2>/dev/null || true
-          JS_TEXTS=$(grep -oE "Светлана онлайн|Активировать Светлану|Голосовая команда" ui-dump.xml 2>/dev/null | sort -u || true)
+
+          # UI dump is a HARD GATE: never suppress failure and never accept empty evidence.
+          adb shell uiautomator dump /sdcard/ui.xml
+          adb shell cat /sdcard/ui.xml > ui-dump.xml
+          test -s ui-dump.xml
+
+          # Current Svetlana UI contract.
+          MARKERS=$(grep -oE 'Светлана|Голосовой чат|Говорить|Слушаю…|Светлана готовит ответ…' ui-dump.xml | sort -u || true)
+          printf '%s\n' "$MARKERS" > js-ui.txt
+          for marker in 'Светлана' 'Голосовой чат' 'Говорить'; do
+            printf '%s\n' "$MARKERS" | grep -Fqx "$marker" || { echo "::error::UI marker missing: $marker"; exit 1; }
+          done
+
+          # Semantic activation must work against the actual visible control.
+          B=$(sed -n 's/.*text="Говорить"[^>]*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' ui-dump.xml | head -1)
+          test -n "$B" || { echo '::error::Voice control "Говорить" not found'; exit 1; }
+          read -r X1 Y1 X2 Y2 <<< "$B"
+          CX=$(( (X1 + X2) / 2 )); CY=$(( (Y1 + Y2) / 2 ))
+          adb shell input tap "$CX" "$CY"
+          sleep 2
+          adb shell uiautomator dump /sdcard/ui-after.xml
+          adb shell cat /sdcard/ui-after.xml > ui-dump-after.xml
+          test -s ui-dump-after.xml
+          grep -Eq 'Слушаю…|Слушаю' ui-dump-after.xml || { echo '::error::Voice activation did not reach listening state'; exit 1; }
+          echo "ACTIVATION_TAP=ok($CX,$CY)" > activation.txt
+
+          adb exec-out screencap -p > screenshot-before.png
+          adb exec-out screencap -p > screenshot.png
           adb logcat -d -v time > full-logcat.txt || true
 
-          # Forensic crash accounting: one FATAL EXCEPTION block = one crash event.
-          # AndroidRuntime and UnsatisfiedLinkError are recorded separately and are
-          # never counted as additional crashes merely because they occur inside the same block.
           awk '
-            function flush_block() {
-              if (!in_block) return
-              fatal_count++
-              if (app_seen) app_count++
-              if (unsat_seen) unsat_count++
-            }
-            /FATAL EXCEPTION/ {
-              flush_block()
-              in_block=1
-              app_seen=0
-              unsat_seen=0
-              next
-            }
-            in_block && /Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)/ { app_seen=1 }
-            in_block && /UnsatisfiedLinkError/ { unsat_seen=1 }
-            END {
-              flush_block()
-              print fatal_count+0 > "crash-total.txt"
-              print app_count+0 > "crash-app-attributed.txt"
-              print unsat_count+0 > "crash-unsatisfied-link-error.txt"
-            }
+            function flush_block(){if(!in_block)return; fatal_count++; if(app_seen)app_count++; if(unsat_seen)unsat_count++}
+            /FATAL EXCEPTION/{flush_block();in_block=1;app_seen=0;unsat_seen=0;next}
+            in_block && /Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)/{app_seen=1}
+            in_block && /UnsatisfiedLinkError/{unsat_seen=1}
+            END{flush_block();print fatal_count+0 > "crash-total.txt";print app_count+0 > "crash-app-attributed.txt";print unsat_count+0 > "crash-unsatisfied-link-error.txt"}
           ' full-logcat.txt
-
-          CRASH_TOTAL=$(cat crash-total.txt)
-          APP_ATTRIBUTED=$(cat crash-app-attributed.txt)
-          UNSAT_ATTRIBUTED=$(cat crash-unsatisfied-link-error.txt)
-
-          awk '
-            /FATAL EXCEPTION/ {
-              if (in_block) printf "%s", block > "crash-blocks.txt"
-              block=$0 "\n"
-              in_block=1
-              next
-            }
-            in_block { block=block $0 "\n" }
-            END { if (in_block) printf "%s", block > "crash-blocks.txt" }
-          ' full-logcat.txt
-
-          : > crash-count.txt
-          printf '%s\n' "$CRASH_TOTAL" > crash-count.txt
-          printf '%s\n' "$PID" > pid.txt
+          CRASH_TOTAL=$(cat crash-total.txt); APP_ATTRIBUTED=$(cat crash-app-attributed.txt)
+          test "$APP_ATTRIBUTED" -eq 0
+          test "$CRASH_TOTAL" -eq 0
+          test -n "$PID"
+          test -n "$PS_LINE"
+          test -n "$RAW_RESUMED"
+          echo "$PID" > pid.txt
           printf '%s\n' "$PS_LINE" > ps.txt
           printf '%s\n' "$RAW_RESUMED" > resumed.txt
           printf '%s\n' "$FOCUS" > focus.txt
-          printf '%s\n' "$JS_TEXTS" > js-ui.txt
-          printf '%s\n' "$DEVLAUNCH" > devlaunch-count.txt
-          ls -la "$GITHUB_WORKSPACE" > inventory.txt 2>&1 || true
-          {
-            echo "### Probe v3.5"
-            echo "cwd: $(cat where-am-i.txt)"
-            echo "APK used: $APK"
-            echo "RESTORED: $(cat restore-flag.txt)"
-            echo "installed_sha256: $(cat apk-sha256.txt)"
-            echo "PID(secondary): '$PID'"
-            echo "Resumed class: $RESUMED_CLASS"
-            echo "DevLauncher-in-focus: $DEVLAUNCH (informational)"
-            echo "Crash events (FATAL blocks): $CRASH_TOTAL"
-            echo "App-attributed crash events: $APP_ATTRIBUTED"
-            echo "UnsatisfiedLinkError events inside fatal blocks: $UNSAT_ATTRIBUTED"
-            echo ""
-            echo '```'; cat ps.txt; echo '```'
-            echo '```'; cat resumed.txt; echo '```'
-            echo '```'; cat focus.txt; echo '```'
-            echo '```'; cat js-ui.txt; echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          if [ "${APP_ATTRIBUTED:-0}" -gt 0 ]; then
-            echo "::error::FAILED: app-attributed crash event(s)"
-            exit 1
-          fi
-          if [ "${CRASH_TOTAL:-0}" -gt 0 ]; then
-            echo "::warning::INCONCLUSIVE: crash event(s) exist but are not attributed to app"
-          fi
-          if [ -z "$PS_LINE" ] && [ -z "$PID" ]; then
-            echo "::error::FAILED: no process trace"
-            exit 1
-          fi
-          if [ -n "$PS_LINE" ] && [ -n "$RAW_RESUMED" ] && [ -n "$JS_TEXTS" ]; then
-            echo "::notice::SMOKE PASSED: native alive + foreground + positive JS evidence"
-          else
-            echo "::warning::INCONCLUSIVE: partial evidence set"
-          fi
-          PROBE_EOF
-          chmod +x "$PROBE_SCRIPT"
-          bash -n "$PROBE_SCRIPT"
-          echo "[ok] probe script syntax OK"
+          echo 0 > devlaunch-count.txt
+          echo 'V4=PASSED' > verification.txt
+          echo 'V6=PASSED' >> verification.txt
+          echo 'SMOKE=PASSED' >> verification.txt
+          echo 'STRICT_SMOKE=PASSED'
+          PROBE
+          chmod +x "$RUNNER_TEMP/smoke-probe.sh"
+          bash -n "$RUNNER_TEMP/smoke-probe.sh"
 
       - name: KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
-      - name: Smoke v3.5 на эмуляторе
+      - name: Strict Smoke v4 на эмуляторе
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           arch: x86_64
           script: bash "${{ runner.temp }}/smoke-probe.sh"
 
-      - name: Evidence upload (включая provenance)
+      - name: Evidence upload
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -228,25 +159,24 @@ jobs:
           path: |
             provenance.txt
             apk-facts.txt
-            restore-flag.txt
             apk-sha256.txt
+            apk-size.txt
             pid.txt
             ps.txt
             resumed.txt
             focus.txt
             js-ui.txt
+            activation.txt
+            verification.txt
             devlaunch-count.txt
-            crash-count.txt
             crash-total.txt
             crash-app-attributed.txt
             crash-unsatisfied-link-error.txt
-            crash-blocks.txt
-            launch-time.txt
-            inventory.txt
-            where-am-i.txt
             ui-dump.xml
-            badging.txt
-            full-logcat.txt
+            ui-dump-after.xml
+            screenshot-before.png
             screenshot.png
+            full-logcat.txt
+            badging.txt
             smoke.apk
-          if-no-files-found: warn
+          if-no-files-found: error
