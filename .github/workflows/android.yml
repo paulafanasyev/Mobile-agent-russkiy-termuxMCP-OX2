@@ -170,14 +170,23 @@ jobs:
         run: pnpm install --no-frozen-lockfile
       - name: Expo prebuild
         run: pnpm exec expo prebuild --platform android --clean
-      - name: Зафиксировать Android SDK для Gradle
+      - name: Зафиксировать Android SDK и Gradle для Gradle/AGP совместимости
         shell: bash
         run: |
           set -euo pipefail
           : "${ANDROID_HOME:?ANDROID_HOME отсутствует после prebuild}"
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
+
+          # Expo SDK 57 uses AGP 8.13.x. AGP 8.13 requires Gradle 8.13;
+          # the generated wrapper in this project can otherwise resolve an
+          # incompatible newer Gradle and fail during Expo module publication.
+          WRAPPER='android/gradle/wrapper/gradle-wrapper.properties'
+          test -s "$WRAPPER"
+          sed -i -E 's#distributionUrl=.*#distributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$WRAPPER"
+          grep -F 'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-bin.zip' "$WRAPPER"
           test -s android/local.properties
           cat android/local.properties
+          grep -F 'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-bin.zip' "$WRAPPER"
           test -f "$ANDROID_HOME/platforms/android-36/android.jar"
       - name: Проверить сгенерированный Gradle и libbox
         working-directory: android
@@ -187,6 +196,8 @@ jobs:
           grep -R "ru.mirsamozanyatykh:libbox:1.0.0" app/build.gradle
           grep -R "build/native/maven" build.gradle settings.gradle app/build.gradle 2>/dev/null || true
           test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
+          ./gradlew --version | tee "$RUNNER_TEMP/gradle-version.txt"
+          grep -F 'Gradle 8.13' "$RUNNER_TEMP/gradle-version.txt"
       - name: Настроить Gradle heap для большого APK (FIX#15-v2)
         shell: bash
         run: |
@@ -222,6 +233,7 @@ jobs:
             ${{ runner.temp }}/gradle-assemble-release.log
             ${{ runner.temp }}/libbox-build.log
             android/local.properties
+            android/gradle/wrapper/gradle-wrapper.properties
             android/hs_err_pid*.log
           if-no-files-found: warn
       - name: Найти APK
@@ -249,5 +261,6 @@ jobs:
         run: |
           echo "libbox revision: $(cat build/native/sing-box-revision.txt)"
           echo "libbox SHA256: $(cut -d' ' -f1 build/native/libbox.aar.sha256)"
+          echo "Gradle: $(cd android && ./gradlew --version | grep '^Gradle ' || true)"
           echo "Preflight: SDK API 21/23/35/36 + NDK 28 + Maven libbox + AAR checksum + CommandServer проверены"
           echo "Release APK: android/app/build/outputs/apk/release/*.apk"
