@@ -7,6 +7,8 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import com.microsoft.cognitiveservices.speech.AudioConfig
 import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
@@ -15,13 +17,15 @@ import com.microsoft.cognitiveservices.speech.SpeechSynthesizer
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.Locale
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/** Android voice bridge for Svetlana: Android recognition + Azure Speech viseme synthesis. */
+/** Android voice bridge for Svetlana: Android recognition + Azure Speech viseme synthesis + offline TTS fallback. */
 class VoiceModule : Module() {
   private var recognizer: SpeechRecognizer? = null
   private var synthesizer: SpeechSynthesizer? = null
+  private var offlineTts: TextToSpeech? = null
 
   override fun definition() = ModuleDefinition {
     Name("SvetlanaVoice")
@@ -171,10 +175,64 @@ class VoiceModule : Module() {
       }
     }
 
+    AsyncFunction("speakOffline") { text: String ->
+      require(text.isNotBlank()) { "Speech text must not be blank" }
+      val context = appContext.reactContext
+        ?: throw IllegalStateException("Android context unavailable")
+
+      suspendCancellableCoroutine { continuation ->
+        val utteranceId = "svetlana-offline-${System.nanoTime()}"
+        val tts = TextToSpeech(context) { status ->
+          if (!continuation.isActive) return@TextToSpeech
+          if (status != TextToSpeech.SUCCESS) {
+            continuation.resumeWithException(IllegalStateException("Android offline TTS initialization failed"))
+            return@TextToSpeech
+          }
+
+          val localeResult = offlineTts?.setLanguage(Locale("ru", "RU"))
+          if (localeResult == TextToSpeech.LANG_MISSING_DATA || localeResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+            continuation.resumeWithException(IllegalStateException("Русский голосовой пакет Android TTS недоступен"))
+            return@TextToSpeech
+          }
+
+          offlineTts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) = Unit
+
+            override fun onDone(doneUtteranceId: String?) {
+              if (doneUtteranceId == utteranceId && continuation.isActive) continuation.resume(true)
+            }
+
+            override fun onError(errorUtteranceId: String?) {
+              if (errorUtteranceId == utteranceId && continuation.isActive) {
+                continuation.resumeWithException(IllegalStateException("Android offline TTS failed"))
+              }
+            }
+          })
+
+          val result = offlineTts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+          if (result != TextToSpeech.SUCCESS && continuation.isActive) {
+            continuation.resumeWithException(IllegalStateException("Android offline TTS rejected speech"))
+          }
+        }
+        offlineTts?.shutdown()
+        offlineTts = tts
+
+        continuation.invokeOnCancellation {
+          tts.stop()
+          tts.shutdown()
+          if (offlineTts === tts) offlineTts = null
+        }
+      }
+      true
+    }
+
     AsyncFunction("stopSpeaking") {
       synthesizer?.StopSpeakingAsync()?.get()
       synthesizer?.close()
       synthesizer = null
+      offlineTts?.stop()
+      offlineTts?.shutdown()
+      offlineTts = null
       true
     }
 
@@ -183,6 +241,8 @@ class VoiceModule : Module() {
       recognizer = null
       synthesizer?.close()
       synthesizer = null
+      offlineTts?.shutdown()
+      offlineTts = null
     }
   }
 }
