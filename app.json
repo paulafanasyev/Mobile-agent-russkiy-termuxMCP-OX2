@@ -12,7 +12,6 @@
       "bundleIdentifier": "ru.mirsamozanyatykh.mobileagent",
       "infoPlist": {
         "NSAppTransportSecurity": {"NSAllowsLocalNetworking": true},
-        "NSLocalNetworkUsageDescription": "Подключение к серверам в локальной сети.",
         "UIFileSharingEnabled": true,
         "LSSupportsOpeningDocumentsInPlace": true,
         "NSMicrophoneUsageDescription": "Светлана использует микрофон для голосового общения с вами."
@@ -56,6 +55,8 @@
           "compileSdkVersion": 36,
           "targetSdkVersion": 36,
           "buildToolsVersion": "36.0.0",
+          "gradleVersion": "8.14.3",
+          "androidGradlePluginVersion": "8.13.0",
           "usesCleartextTraffic": true
         }
       }],
