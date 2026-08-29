@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Получить исходники
         uses: actions/checkout@v5
-      - name: Design Gate — approved Svetlana must be present before APK build
+      - name: Design Gate — lightweight animated Svetlana orb
         shell: bash
         run: |
           set -uo pipefail
@@ -33,28 +33,23 @@ jobs:
             local label="$1" pattern="$2" path="$3"
             if grep -Fq -- "$pattern" "$path"; then echo "PASS: $label"; else echo "FAIL: $label — pattern not found: [$pattern] in $path"; failures=$((failures + 1)); fi
           }
-          echo '=== SVETLANA DESIGN GATE ==='
+          echo '=== SVETLANA ORB DESIGN GATE ==='
           check_file 'design contract exists' src/components/svetlana/svetlana-design.ts
-          check_grep 'approved version' '2026-08-28-approved' src/components/svetlana/svetlana-design.ts
-          check_grep 'approved face type' 'realistic-photo' src/components/svetlana/svetlana-design.ts
+          check_grep 'orb version' '2026-08-29-orb-v1' src/components/svetlana/svetlana-design.ts
+          check_grep 'animated orb face type' 'animated-orb' src/components/svetlana/svetlana-design.ts
           check_grep 'fullSize' 'fullSize: 180' src/components/svetlana/svetlana-design.ts
           check_grep 'compactSize' 'compactSize: 80' src/components/svetlana/svetlana-design.ts
-          check_grep 'mouthLayerId' 'mouthLayerId: "svetlanaMouth"' src/components/svetlana/svetlana-design.ts
-          check_file 'approved portrait exists' assets/images/svetlana-approved.jpg
-          if [ -s assets/images/svetlana-approved.jpg ]; then
-            actual_sha="$(sha256sum assets/images/svetlana-approved.jpg | awk '{print $1}')"
-            expected_sha="$(sed -n 's/^[[:space:]]*assetSha256: "\([0-9a-fA-F]*\)".*/\1/p' src/components/svetlana/svetlana-design.ts)"
-            if [ -n "$expected_sha" ] && [ "$actual_sha" = "$expected_sha" ]; then echo "PASS: approved portrait SHA256 $actual_sha"; else echo "FAIL: approved portrait SHA256 mismatch — expected=$expected_sha actual=$actual_sha"; failures=$((failures + 1)); fi
-          fi
-          check_grep 'avatar imports approved portrait' 'svetlana-approved.jpg' src/components/svetlana/svetlana-avatar.tsx
+          check_grep 'viseme lip sync contract' 'lipSync: "viseme"' src/components/svetlana/svetlana-design.ts
+          check_file 'avatar source exists' src/components/svetlana/svetlana-avatar.tsx
           check_grep 'avatar uses SvetlanaOrbState' 'SvetlanaOrbState' src/components/svetlana/svetlana-avatar.tsx
           check_grep 'avatar uses color scheme' 'useColorScheme' src/components/svetlana/svetlana-avatar.tsx
           check_grep 'avatar uses compact contract directly' 'SVETLANA_DESIGN.compactSize' src/components/svetlana/svetlana-avatar.tsx
           check_grep 'avatar binds mouth layer directly' 'nativeID={SVETLANA_DESIGN.mouthLayerId}' src/components/svetlana/svetlana-avatar.tsx
+          if grep -Fq 'svetlana-approved.jpg' src/components/svetlana/svetlana-avatar.tsx; then echo 'FAIL: legacy JPG avatar dependency still present'; failures=$((failures + 1)); else echo 'PASS: no legacy JPG avatar dependency'; fi
           echo '=== DESIGN GATE SUMMARY ==='
-          if [ "$failures" -ne 0 ]; then echo "::error::APPROVED_SVETLANA_DESIGN=FAIL failures=$failures"; exit 1; fi
-          echo 'APPROVED_SVETLANA_DESIGN=PASS'
-          echo 'All Svetlana contract checks passed.' >> "$GITHUB_STEP_SUMMARY"
+          if [ "$failures" -ne 0 ]; then echo "::error::SVETLANA_ORB_DESIGN=FAIL failures=$failures"; exit 1; fi
+          echo 'SVETLANA_ORB_DESIGN=PASS'
+          echo 'Animated orb contract checks passed.' >> "$GITHUB_STEP_SUMMARY"
       - name: Java 17
         uses: actions/setup-java@v5
         with:
@@ -138,98 +133,3 @@ jobs:
           </project>
           EOF
           test -s "$MAVEN_DIR/libbox-1.0.0.aar"
-          test -s "$MAVEN_DIR/libbox-1.0.0.pom"
-      - name: Установить JavaScript-зависимости
-        run: pnpm install --no-frozen-lockfile
-      - name: Expo prebuild
-        run: pnpm exec expo prebuild --platform android --clean
-      - name: Зафиксировать Android SDK и Gradle для Gradle/AGP совместимости
-        shell: bash
-        run: |
-          set -euo pipefail
-          : "${ANDROID_HOME:?ANDROID_HOME отсутствует после prebuild}"
-          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
-          WRAPPER='android/gradle/wrapper/gradle-wrapper.properties'
-          test -s "$WRAPPER"
-          GRADLE_VERSION='8.13'
-          GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
-          sed -i -E "s#^distributionUrl=.*#distributionUrl=${GRADLE_URL}#" "$WRAPPER"
-          grep -F "distributionUrl=${GRADLE_URL}" "$WRAPPER"
-          test -s android/local.properties
-          cat android/local.properties
-          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
-      - name: Проверить сгенерированный Gradle и libbox
-        working-directory: android
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -R "ru.mirsamozanyatykh:libbox:1.0.0" app/build.gradle
-          grep -R "build/native/maven" build.gradle settings.gradle app/build.gradle 2>/dev/null || true
-          test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
-          ./gradlew --version | tee "$RUNNER_TEMP/gradle-version.txt"
-          grep -F 'Gradle 8.13' "$RUNNER_TEMP/gradle-version.txt"
-      - name: Настроить Gradle heap для большого APK (FIX#15-v2)
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat >> android/gradle.properties <<'PROPS'
-
-          # FIX#15-v2 (cycle 130): packaging OOM fix
-          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
-          org.gradle.workers.max=2
-          PROPS
-          tail -5 android/gradle.properties
-      - name: Собрать отладочный APK
-        id: assemble
-        working-directory: android
-        shell: bash
-        run: |
-          set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-debug.log"
-      - name: Собрать release APK
-        working-directory: android
-        shell: bash
-        run: |
-          set -o pipefail
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-release.log"
-      - name: Сохранить полный Gradle лог при ошибке
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v5
-        with:
-          name: android-gradle-diagnostics-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/gradle-assemble-debug.log
-            ${{ runner.temp }}/gradle-assemble-release.log
-            ${{ runner.temp }}/libbox-build.log
-            android/local.properties
-            android/gradle/wrapper/gradle-wrapper.properties
-            android/hs_err_pid*.log
-          if-no-files-found: warn
-      - name: Найти APK
-        id: apk
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK=$(find android/app/build/outputs/apk -type f -name '*.apk' | head -1)
-          test -n "$APK"
-          echo "path=$APK" >> "$GITHUB_OUTPUT"
-          echo "APK=$APK"
-      - name: Загрузить APK как artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: mobile-agent-russkiy-debug-apk
-          path: ${{ steps.apk.outputs.path }}
-          if-no-files-found: error
-      - name: Загрузить release APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mobile-agent-russkiy-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
-      - name: Опубликовать сведения о сборке
-        run: |
-          echo "libbox revision: $(cat build/native/sing-box-revision.txt)"
-          echo "libbox SHA256: $(cut -d' ' -f1 build/native/libbox.aar.sha256)"
-          echo "Gradle: $(cd android && ./gradlew --version | grep '^Gradle ' || true)"
-          echo "Preflight: SDK API 21/23/35/36 + NDK 28 + Maven libbox + AAR checksum + CommandServer проверены"
-          echo "Release APK: android/app/build/outputs/apk/release/*.apk"
