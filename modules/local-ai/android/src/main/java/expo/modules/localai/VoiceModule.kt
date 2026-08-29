@@ -46,7 +46,7 @@ class VoiceModule : Module() {
       )
     }
 
-    AsyncFunction("listen") Coroutine<String> {
+    AsyncFunction("listen") Coroutine {
       val context = appContext.reactContext
         ?: throw IllegalStateException("Android context unavailable")
       if (androidx.core.content.ContextCompat.checkSelfPermission(
@@ -134,61 +134,36 @@ class VoiceModule : Module() {
     }
 
     AsyncFunction("speak") { text: String, subscriptionKey: String, region: String ->
-      require(text.isNotBlank()) { "Speech text must not be blank" }
-      require(subscriptionKey.isNotBlank()) { "Azure Speech subscription key is required" }
-      require(region.isNotBlank()) { "Azure Speech region is required" }
-
-      synthesizer?.close()
-      synthesizer = null
-
-      val speechConfig = SpeechConfig.fromSubscription(subscriptionKey, region)
-      speechConfig.speechSynthesisLanguage = "ru-RU"
-      speechConfig.speechSynthesisVoiceName = "ru-RU-SvetlanaNeural"
-      val audioConfig = AudioConfig.fromDefaultSpeakerOutput()
-      val currentSynthesizer = SpeechSynthesizer(speechConfig, audioConfig)
-      synthesizer = currentSynthesizer
-
-      currentSynthesizer.SynthesisVisemeEventReceived.addEventListener { _, event ->
-        sendEvent(
-          "onVisemeReceived",
-          mapOf(
-            "audioOffset" to event.audioOffset,
-            "audioOffsetMs" to event.audioOffset / 10_000.0,
-            "visemeId" to event.visemeId,
-            "animation" to event.animation,
-          ),
-        )
+      if (subscriptionKey.isBlank() || region.isBlank()) {
+        throw IllegalStateException("Azure credentials not configured. Use setAzureSpeechCredentials.")
       }
-
       try {
-        val result: SpeechSynthesisResult = currentSynthesizer.SpeakTextAsync(text).get()
-        if (result.reason == ResultReason.SynthesizingAudioCompleted) {
-          sendEvent("onSpeechCompleted", mapOf("resultId" to result.resultId))
-          true
-        } else if (result.reason == ResultReason.Canceled) {
-          val cancellation = SpeechSynthesisCancellationDetails.fromResult(result)
-          val details = buildString {
-            append("Azure Speech synthesis canceled: reason=")
-            append(cancellation.reason)
-            if (cancellation.reason == CancellationReason.Error) {
-              append(", errorCode=")
-              append(cancellation.errorCode)
-              append(", errorDetails=")
-              append(cancellation.errorDetails)
-            }
-          }
-          sendEvent("onSpeechError", mapOf("message" to details))
-          throw IllegalStateException(details)
-        } else {
-          val details = "Azure Speech synthesis returned unexpected result reason: ${result.reason}"
-          sendEvent("onSpeechError", mapOf("message" to details))
-          throw IllegalStateException(details)
+        val speechConfig = SpeechConfig.fromSubscription(subscriptionKey, region)
+        speechConfig.speechSynthesisVoiceName = "ru-RU-SvetlanaNeural"
+        speechConfig.setSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Audio24Khz160KBitRateMonoMp3)
+        val audioConfig = AudioConfig.fromDefaultSpeakerOutput()
+        val synthesizer = SpeechSynthesizer(speechConfig, audioConfig)
+        currentSynthesizer = synthesizer
+        synthesizer.VisemeReceived.addEventListener { _, event ->
+          sendEvent("onVisemeReceived", mapOf(
+            "visemeId" to event.getVisemeId(),
+            "audioOffset" to event.getAudioOffset(),
+            "audioOffsetMs" to event.getAudioOffset() / 10_000.0,
+            "animation" to event.getAnimation(),
+          ))
         }
+        val result = synthesizer.SpeakTextAsync(text).get()
+        if (result.reason == ResultReason.SynthesizingAudioCompleted) {
+          return@AsyncFunction true
+        } else {
+          val cancellation = SpeechSynthesisCancellationDetails.fromResult(result)
+          throw IllegalStateException("Azure synthesis failed: ${cancellation.reason} — ${cancellation.errorDetails}")
+        }
+      } catch (e: Exception) {
+        throw IllegalStateException("Azure synthesis error: ${e.message}")
       } finally {
-        currentSynthesizer.close()
-        speechConfig.close()
-        audioConfig.close()
-        if (synthesizer === currentSynthesizer) synthesizer = null
+        currentSynthesizer?.close()
+        currentSynthesizer = null
       }
     }
 
@@ -243,7 +218,7 @@ class VoiceModule : Module() {
       true
     }
 
-    AsyncFunction("stopSpeaking") Coroutine<Boolean> {
+    AsyncFunction("stopSpeaking") Coroutine {
       synthesizer?.StopSpeakingAsync()?.get()
       synthesizer?.close()
       synthesizer = null
