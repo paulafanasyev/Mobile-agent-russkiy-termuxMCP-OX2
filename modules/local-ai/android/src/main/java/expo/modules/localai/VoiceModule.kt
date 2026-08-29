@@ -46,7 +46,7 @@ class VoiceModule : Module() {
       )
     }
 
-    AsyncFunction("listen") Coroutine {
+    AsyncFunction("listen") Coroutine<String> {
       val context = appContext.reactContext
         ?: throw IllegalStateException("Android context unavailable")
       if (androidx.core.content.ContextCompat.checkSelfPermission(
@@ -133,7 +133,7 @@ class VoiceModule : Module() {
       true
     }
 
-    AsyncFunction("speak") Coroutine { text: String, subscriptionKey: String, region: String ->
+    AsyncFunction("speak") { text: String, subscriptionKey: String, region: String ->
       require(text.isNotBlank()) { "Speech text must not be blank" }
       require(subscriptionKey.isNotBlank()) { "Azure Speech subscription key is required" }
       require(region.isNotBlank()) { "Azure Speech region is required" }
@@ -148,7 +148,7 @@ class VoiceModule : Module() {
       val currentSynthesizer = SpeechSynthesizer(speechConfig, audioConfig)
       synthesizer = currentSynthesizer
 
-      currentSynthesizer.visemeReceived.addEventListener { _, event ->
+      currentSynthesizer.SynthesisVisemeEventReceived.addEventListener { _, event ->
         sendEvent(
           "onVisemeReceived",
           mapOf(
@@ -243,7 +243,7 @@ class VoiceModule : Module() {
       true
     }
 
-    AsyncFunction("stopSpeaking") Coroutine {
+    AsyncFunction("stopSpeaking") Coroutine<Boolean> {
       synthesizer?.StopSpeakingAsync()?.get()
       synthesizer?.close()
       synthesizer = null
