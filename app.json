@@ -57,7 +57,10 @@
           "buildToolsVersion": "36.0.0",
           "usesCleartextTraffic": true,
           "packagingOptions": {
-            "exclude": ["META-INF/INDEX.LIST"]
+            "exclude": [
+              "META-INF/INDEX.LIST",
+              "META-INF/io.netty.versions.properties"
+            ]
           }
         }
       }],
