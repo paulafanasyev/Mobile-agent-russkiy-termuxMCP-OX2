@@ -88,7 +88,7 @@ jobs:
           export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/28.0.13004108"
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
           java -version
           sdkmanager --version
           sdkmanager --sdk_root="$ANDROID_HOME" --list_installed | grep -E 'platforms;android-(21|23|35|36)|build-tools;(35|36).0.0|ndk;28.0.13004108'
@@ -133,3 +133,98 @@ jobs:
           </project>
           EOF
           test -s "$MAVEN_DIR/libbox-1.0.0.aar"
+          test -s "$MAVEN_DIR/libbox-1.0.0.pom"
+      - name: Установить JavaScript-зависимости
+        run: pnpm install --no-frozen-lockfile
+      - name: Expo prebuild
+        run: pnpm exec expo prebuild --platform android --clean
+      - name: Зафиксировать Android SDK и Gradle для Gradle/AGP совместимости
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?ANDROID_HOME отсутствует после prebuild}"
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
+          WRAPPER='android/gradle/wrapper/gradle-wrapper.properties'
+          test -s "$WRAPPER"
+          GRADLE_VERSION='8.13'
+          GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          sed -i -E "s#^distributionUrl=.*#distributionUrl=${GRADLE_URL}#" "$WRAPPER"
+          grep -F "distributionUrl=${GRADLE_URL}" "$WRAPPER"
+          test -s android/local.properties
+          cat android/local.properties
+          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+      - name: Проверить сгенерированный Gradle и libbox
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R "ru.mirsamozanyatykh:libbox:1.0.0" app/build.gradle
+          grep -R "build/native/maven" build.gradle settings.gradle app/build.gradle 2>/dev/null || true
+          test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
+          ./gradlew --version | tee "$RUNNER_TEMP/gradle-version.txt"
+          grep -F 'Gradle 8.13' "$RUNNER_TEMP/gradle-version.txt"
+      - name: Настроить Gradle heap для большого APK (FIX#15-v2)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> android/gradle.properties <<'PROPS'
+
+          # FIX#15-v2 (cycle 130): packaging OOM fix
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
+          org.gradle.workers.max=2
+          PROPS
+          tail -5 android/gradle.properties
+      - name: Собрать отладочный APK
+        id: assemble
+        working-directory: android
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-debug.log"
+      - name: Собрать release APK
+        working-directory: android
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-release.log"
+      - name: Сохранить полный Gradle лог при ошибке
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: android-gradle-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/gradle-assemble-debug.log
+            ${{ runner.temp }}/gradle-assemble-release.log
+            ${{ runner.temp }}/libbox-build.log
+            android/local.properties
+            android/gradle/wrapper/gradle-wrapper.properties
+            android/hs_err_pid*.log
+          if-no-files-found: warn
+      - name: Найти APK
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find android/app/build/outputs/apk -type f -name '*.apk' | head -1)
+          test -n "$APK"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "APK=$APK"
+      - name: Загрузить APK как artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: mobile-agent-russkiy-debug-apk
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+      - name: Загрузить release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-agent-russkiy-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+      - name: Опубликовать сведения о сборке
+        run: |
+          echo "libbox revision: $(cat build/native/sing-box-revision.txt)"
+          echo "libbox SHA256: $(cut -d' ' -f1 build/native/libbox.aar.sha256)"
+          echo "Gradle: $(cd android && ./gradlew --version | grep '^Gradle ' || true)"
+          echo "Preflight: SDK API 21/23/35/36 + NDK 28 + Maven libbox + AAR checksum + CommandServer проверены"
+          echo "Release APK: android/app/build/outputs/apk/release/*.apk"
