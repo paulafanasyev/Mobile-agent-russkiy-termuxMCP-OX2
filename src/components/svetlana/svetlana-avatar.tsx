@@ -18,7 +18,7 @@ export function SvetlanaAvatar({ compact = false, speaking = false, visemeId, st
   const scheme = useColorScheme();
   const timelineShape = useSvetlanaVisemes(speaking);
   const explicitShape: VisemeShape | null = visemeId == null ? null : shapeForViseme(visemeId);
-  const mouthShape = explicitShape ?? timelineShape;
+  const mouthShape: VisemeShape | null = explicitShape ?? timelineShape;
   const size = compact ? SVETLANA_DESIGN.compactSize : SVETLANA_DESIGN.fullSize;
   const resolvedState: SvetlanaOrbState = state ?? (speaking ? "speaking" : "idle");
   const orbPulse = useRef(new Animated.Value(1)).current;
