@@ -1,5 +1,7 @@
 import { Redirect } from "expo-router";
 
 export default function Index() {
-  return <Redirect href="/svetlana" />;
+  // Keep the existing text chat as the main screen; Svetlana voice and Hands
+  // are capabilities added to the existing application, not a replacement UI.
+  return <Redirect href="/chat" />;
 }
