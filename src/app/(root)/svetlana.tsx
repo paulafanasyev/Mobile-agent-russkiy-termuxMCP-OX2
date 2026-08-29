@@ -17,9 +17,8 @@ async function requestMicrophonePermission() {
 }
 
 async function speakWithConfiguredVoice(text: string) {
-  const { SvetlanaVoice, getAzureSpeechCredentials } = await import("../../../modules/local-ai");
-  const { subscriptionKey, region } = await getAzureSpeechCredentials();
-  return SvetlanaVoice.speak(text, subscriptionKey, region);
+  const { SvetlanaVoice } = await import("../../../modules/local-ai");
+  return SvetlanaVoice.speak(text);
 }
 
 export default function SvetlanaScreen() {
