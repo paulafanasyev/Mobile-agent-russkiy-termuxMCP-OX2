@@ -9,13 +9,13 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import com.microsoft.cognitiveservices.speech.AudioConfig
 import com.microsoft.cognitiveservices.speech.CancellationReason
 import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisCancellationDetails
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisResult
 import com.microsoft.cognitiveservices.speech.SpeechSynthesizer
+import com.microsoft.cognitiveservices.speech.audio.AudioConfig
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -132,7 +132,7 @@ class VoiceModule : Module() {
       true
     }
 
-    AsyncFunction("speak") { text: String, subscriptionKey: String, region: String ->
+    AsyncFunction("speak") Coroutine { text: String, subscriptionKey: String, region: String ->
       require(text.isNotBlank()) { "Speech text must not be blank" }
       require(subscriptionKey.isNotBlank()) { "Azure Speech subscription key is required" }
       require(region.isNotBlank()) { "Azure Speech region is required" }
@@ -242,7 +242,7 @@ class VoiceModule : Module() {
       true
     }
 
-    AsyncFunction("stopSpeaking") {
+    AsyncFunction("stopSpeaking") Coroutine {
       synthesizer?.StopSpeakingAsync()?.get()
       synthesizer?.close()
       synthesizer = null
