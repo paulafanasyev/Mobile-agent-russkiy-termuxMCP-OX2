@@ -23,9 +23,7 @@ export function SvetlanaAvatar({ compact = false, speaking = false, visemeId, st
   const resolvedState: SvetlanaOrbState = state ?? (speaking ? "speaking" : "idle");
   const orbPulse = useRef(new Animated.Value(1)).current;
   const mouthScale = useRef(new Animated.Value(0.35)).current;
-  const mouthWidth = useRef(new Animated.Value(13)).current;
   const mouthScaleX = useRef(new Animated.Value(1)).current;
-  const mouthRadius = useRef(new Animated.Value(8)).current;
 
   useEffect(() => {
     const duration = resolvedState === "error" ? 420 : resolvedState === "listening" ? 900 : 1500;
@@ -38,17 +36,13 @@ export function SvetlanaAvatar({ compact = false, speaking = false, visemeId, st
   }, [orbPulse, resolvedState]);
 
   useEffect(() => {
-    if (!mouthShape) {
-      Animated.timing(mouthScale, { toValue: speaking ? 0.45 : 0.35, duration: 120, useNativeDriver: true }).start();
-      return;
-    }
+    const targetScaleX = mouthShape ? Math.max(0.1, (mouthShape.width / 13) * mouthShape.scaleX) : 1;
+    const targetScaleY = mouthShape ? Math.max(0.1, mouthShape.scaleY) : speaking ? 0.45 : 0.35;
     Animated.parallel([
-      Animated.timing(mouthWidth, { toValue: mouthShape.width, duration: 45, useNativeDriver: false }),
-      Animated.timing(mouthScaleX, { toValue: mouthShape.scaleX, duration: 45, useNativeDriver: false }),
-      Animated.timing(mouthRadius, { toValue: mouthShape.radius, duration: 45, useNativeDriver: false }),
-      Animated.timing(mouthScale, { toValue: mouthShape.scaleY, duration: 45, useNativeDriver: true }),
+      Animated.timing(mouthScaleX, { toValue: targetScaleX, duration: 45, useNativeDriver: true }),
+      Animated.timing(mouthScale, { toValue: targetScaleY, duration: 45, useNativeDriver: true }),
     ]).start();
-  }, [mouthShape, mouthScale, mouthWidth, mouthRadius, mouthScaleX, speaking]);
+  }, [mouthShape, mouthScale, mouthScaleX, speaking]);
 
   const orb = ORB[resolvedState];
   const background = scheme === "dark" ? "#17111f" : "#faf8f5";
@@ -60,7 +54,7 @@ export function SvetlanaAvatar({ compact = false, speaking = false, visemeId, st
       <Animated.View pointerEvents="none" style={[styles.orb, { width: size, height: size, borderColor: orb, shadowColor: orb, transform: [{ scale: orbPulse }] }]} />
       <View style={[styles.faceFrame, { width: size - 8, height: size - 8, backgroundColor: background, borderColor: border }]}>
         <Image source={require("../../../assets/images/svetlana-approved.jpg")} accessibilityLabel="Утверждённый портрет Светланы" resizeMode="cover" style={[styles.portrait, { width: size - 12, height: size - 12 }]} />
-        <Animated.View nativeID={SVETLANA_DESIGN.mouthLayerId} pointerEvents="none" accessibilityLabel={mouthShape ? "Висема Светланы" : "Рот Светланы"} style={[styles.mouth, { width: mouthWidth, borderRadius: mouthRadius, transform: [{ scaleX: mouthScaleX }, { scaleY: mouthScale }], opacity: mouthShape ? 0.28 : speaking ? 0.18 : 0 }]} />
+        <Animated.View nativeID={SVETLANA_DESIGN.mouthLayerId} pointerEvents="none" accessibilityLabel={mouthShape ? "Висема Светланы" : "Рот Светланы"} style={[styles.mouth, { transform: [{ scaleX: mouthScaleX }, { scaleY: mouthScale }], opacity: mouthShape ? 0.28 : speaking ? 0.18 : 0 }]} />
         <View pointerEvents="none" accessibilityLabel={isListening ? "Микрофон активен" : "Микрофон неактивен"} style={[styles.micIndicator, { opacity: isListening ? 1 : 0.7, backgroundColor: isListening ? "#38bdf8" : border }]} />
       </View>
     </Pressable>
@@ -73,6 +67,6 @@ const styles = StyleSheet.create({
   faceFrame: { alignItems: "center", justifyContent: "center", borderRadius: 999, overflow: "hidden", borderWidth: 1 },
   portrait: { borderRadius: 999 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
-  mouth: { position: "absolute", left: "50%", top: "51%", height: 5, backgroundColor: "#8f4f5d", marginLeft: -6.5, marginTop: -2.5 },
+  mouth: { position: "absolute", left: "50%", top: "51%", width: 13, height: 5, backgroundColor: "#8f4f5d", marginLeft: -6.5, marginTop: -2.5 },
   micIndicator: { position: "absolute", right: 7, bottom: 7, width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: "#faf8f5" },
 });
