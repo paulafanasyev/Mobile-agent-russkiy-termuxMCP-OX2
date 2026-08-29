@@ -71,7 +71,8 @@
     "refractor": "^5.0.0",
     "tailwind-merge": "^3.6.0",
     "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "expo-accessibility": "~57.0.0"
   },
   "devDependencies": {
     "@babel/plugin-transform-react-jsx": "^8.0.1",
