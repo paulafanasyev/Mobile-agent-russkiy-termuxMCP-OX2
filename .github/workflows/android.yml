@@ -151,8 +151,10 @@ jobs:
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
           WRAPPER='android/gradle/wrapper/gradle-wrapper.properties'
           test -s "$WRAPPER"
-          sed -i -E 's#distributionUrl=.*#distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$WRAPPER"
-          grep -F 'distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip' "$WRAPPER"
+          GRADLE_VERSION='8.13'
+          GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          sed -i -E "s#^distributionUrl=.*#distributionUrl=${GRADLE_URL}#" "$WRAPPER"
+          grep -F "distributionUrl=${GRADLE_URL}" "$WRAPPER"
           test -s android/local.properties
           cat android/local.properties
           test -f "$ANDROID_HOME/platforms/android-36/android.jar"
