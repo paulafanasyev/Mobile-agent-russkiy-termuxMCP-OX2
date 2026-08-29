@@ -1,39 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  PermissionsAndroid,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack } from "expo-router";
 import { Mic, MicOff, Volume2 } from "lucide-react-native";
-
 import { SvetlanaAvatar } from "@/components/svetlana/svetlana-avatar";
 import { useChat } from "@/hooks/use-chat";
 
 async function requestMicrophonePermission() {
   if (Platform.OS !== "android") return true;
-  const result = await PermissionsAndroid.request(
-    PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-    {
-      title: "Микрофон для Светланы",
-      message: "Светлане нужен доступ к микрофону для голосового общения.",
-      buttonPositive: "Разрешить",
-      buttonNegative: "Не сейчас",
-    },
-  );
+  const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
+    title: "Микрофон для Светланы",
+    message: "Светлане нужен доступ к микрофону для голосового общения.",
+    buttonPositive: "Разрешить",
+    buttonNegative: "Не сейчас",
+  });
   return result === PermissionsAndroid.RESULTS.GRANTED;
-}
-
-async function speakWithSecureCredentials(text: string) {
-  const { SvetlanaVoice, getAzureSpeechCredentials } = await import("../../../modules/local-ai");
-  const credentials = await getAzureSpeechCredentials();
-  return SvetlanaVoice.speak(text, credentials.subscriptionKey, credentials.region);
 }
 
 export default function SvetlanaScreen() {
@@ -46,16 +26,13 @@ export default function SvetlanaScreen() {
 
   useEffect(() => {
     if (!waitingForResponse) return;
-    const assistant = [...messages]
-      .reverse()
-      .find((message) => message.role === "assistant" && message.status === "completed");
+    const assistant = [...messages].reverse().find((message) => message.role === "assistant" && message.status === "completed");
     if (!assistant || assistant.id === lastVoiceAssistantId.current) return;
-
     lastVoiceAssistantId.current = assistant.id;
     setWaitingForResponse(false);
-    void speakWithSecureCredentials(assistant.content).catch((error) => {
-      setVoiceError(error instanceof Error ? error.message : "Не удалось озвучить ответ.");
-    });
+    void import("../../../modules/local-ai")
+      .then(({ SvetlanaVoice }) => SvetlanaVoice.speak(assistant.content))
+      .catch((error) => setVoiceError(error instanceof Error ? error.message : "Не удалось озвучить ответ."));
   }, [messages, waitingForResponse]);
 
   async function handleVoiceChat() {
@@ -69,23 +46,20 @@ export default function SvetlanaScreen() {
       }
       return;
     }
-
     const granted = await requestMicrophonePermission();
     if (!granted) {
       setVoiceError("Доступ к микрофону не разрешён.");
       return;
     }
-
     try {
       setListening(true);
       setTranscript("");
       const { SvetlanaVoice } = await import("../../../modules/local-ai");
-      const text = await SvetlanaVoice.listen();
-      const normalizedText = text.trim();
-      if (!normalizedText) throw new Error("Речь не распознана. Попробуйте ещё раз.");
-      setTranscript(normalizedText);
+      const text = (await SvetlanaVoice.listen()).trim();
+      if (!text) throw new Error("Речь не распознана. Попробуйте ещё раз.");
+      setTranscript(text);
       setWaitingForResponse(true);
-      await sendMessage({ content: normalizedText });
+      await sendMessage({ content: text });
     } catch (error) {
       setWaitingForResponse(false);
       setVoiceError(error instanceof Error ? error.message : "Голосовой ввод не сработал.");
@@ -98,7 +72,8 @@ export default function SvetlanaScreen() {
     const assistant = [...messages].reverse().find((message) => message.role === "assistant");
     if (!assistant) return;
     try {
-      await speakWithSecureCredentials(assistant.content);
+      const { SvetlanaVoice } = await import("../../../modules/local-ai");
+      await SvetlanaVoice.speak(assistant.content);
     } catch (error) {
       Alert.alert("Светлана", error instanceof Error ? error.message : "Не удалось включить озвучку.");
     }
@@ -113,61 +88,24 @@ export default function SvetlanaScreen() {
           <View style={styles.heroText}>
             <Text style={styles.title}>Светлана</Text>
             <Text style={styles.subtitle}>Голосовой AI-ассистент OX2</Text>
-            <View style={styles.statusRow}>
-              <View style={styles.dot} />
-              <Text style={styles.status}>Готова к разговору</Text>
-            </View>
+            <View style={styles.statusRow}><View style={styles.dot} /><Text style={styles.status}>Готова к разговору</Text></View>
           </View>
         </View>
-
         <View style={styles.voiceCard}>
           <Text style={styles.voiceTitle}>Голосовой чат</Text>
-          <Text style={styles.voiceHint}>
-            Нажмите микрофон, скажите запрос по-русски. Светлана передаст его выбранной модели и озвучит ответ.
-          </Text>
-
-          <Pressable
-            accessibilityLabel={listening ? "Остановить запись" : "Начать голосовой ввод"}
-            onPress={handleVoiceChat}
-            style={({ pressed }) => [styles.micButton, pressed && styles.pressed]}
-          >
+          <Text style={styles.voiceHint}>Нажмите микрофон, скажите запрос по-русски. Светлана передаст его выбранной модели и озвучит ответ.</Text>
+          <Pressable accessibilityLabel={listening ? "Остановить запись" : "Начать голосовой ввод"} onPress={handleVoiceChat} style={({ pressed }) => [styles.micButton, pressed && styles.pressed]}>
             {listening ? <MicOff color="#fff" size={28} /> : <Mic color="#fff" size={28} />}
             <Text style={styles.micLabel}>{listening ? "Слушаю…" : "Говорить"}</Text>
           </Pressable>
-
-          {transcript ? (
-            <View style={styles.transcript}>
-              <Text style={styles.label}>Вы сказали</Text>
-              <Text style={styles.transcriptText}>{transcript}</Text>
-            </View>
-          ) : null}
-
-          {waitingForResponse || currentConversationRunStatus === "running" ? (
-            <View style={styles.waiting}>
-              <ActivityIndicator color="#a78bfa" />
-              <Text style={styles.waitingText}>Светлана готовит ответ…</Text>
-            </View>
-          ) : null}
-
+          {transcript ? <View style={styles.transcript}><Text style={styles.label}>Вы сказали</Text><Text style={styles.transcriptText}>{transcript}</Text></View> : null}
+          {waitingForResponse || currentConversationRunStatus === "running" ? <View style={styles.waiting}><ActivityIndicator color="#a78bfa" /><Text style={styles.waitingText}>Светлана готовит ответ…</Text></View> : null}
           {voiceError ? <Text style={styles.error}>{voiceError}</Text> : null}
-
-          <Pressable onPress={handleSpeakLast} style={styles.secondary}>
-            <Volume2 color="#c4b5fd" size={18} />
-            <Text style={styles.secondaryText}>Озвучить последний ответ</Text>
-          </Pressable>
+          <Pressable onPress={handleSpeakLast} style={styles.secondary}><Volume2 color="#c4b5fd" size={18} /><Text style={styles.secondaryText}>Озвучить последний ответ</Text></Pressable>
         </View>
-
         <View style={styles.historyCard}>
           <Text style={styles.voiceTitle}>Последний диалог</Text>
-          {[...messages]
-            .filter((message) => message.role !== "system")
-            .slice(-4)
-            .map((message) => (
-              <View key={message.id} style={styles.message}>
-                <Text style={styles.label}>{message.role === "user" ? "Вы" : "Светлана"}</Text>
-                <Text style={styles.messageText}>{message.content}</Text>
-              </View>
-            ))}
+          {[...messages].filter((message) => message.role !== "system").slice(-4).map((message) => <View key={message.id} style={styles.message}><Text style={styles.label}>{message.role === "user" ? "Вы" : "Светлана"}</Text><Text style={styles.messageText}>{message.content}</Text></View>)}
         </View>
       </ScrollView>
     </View>
