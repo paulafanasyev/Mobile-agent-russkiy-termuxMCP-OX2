@@ -30,6 +30,12 @@ async function requestMicrophonePermission() {
   return result === PermissionsAndroid.RESULTS.GRANTED;
 }
 
+async function speakWithSecureCredentials(text: string) {
+  const { SvetlanaVoice, getAzureSpeechCredentials } = await import("../../../modules/local-ai");
+  const credentials = await getAzureSpeechCredentials();
+  return SvetlanaVoice.speak(text, credentials.subscriptionKey, credentials.region);
+}
+
 export default function SvetlanaScreen() {
   const { messages, sendMessage, currentConversationRunStatus } = useChat();
   const [listening, setListening] = useState(false);
@@ -47,11 +53,9 @@ export default function SvetlanaScreen() {
 
     lastVoiceAssistantId.current = assistant.id;
     setWaitingForResponse(false);
-    void import("../../../modules/local-ai")
-      .then(({ SvetlanaVoice }) => SvetlanaVoice.speak(assistant.content))
-      .catch((error) => {
-        setVoiceError(error instanceof Error ? error.message : "Не удалось озвучить ответ.");
-      });
+    void speakWithSecureCredentials(assistant.content).catch((error) => {
+      setVoiceError(error instanceof Error ? error.message : "Не удалось озвучить ответ.");
+    });
   }, [messages, waitingForResponse]);
 
   async function handleVoiceChat() {
@@ -77,9 +81,11 @@ export default function SvetlanaScreen() {
       setTranscript("");
       const { SvetlanaVoice } = await import("../../../modules/local-ai");
       const text = await SvetlanaVoice.listen();
-      setTranscript(text);
+      const normalizedText = text.trim();
+      if (!normalizedText) throw new Error("Речь не распознана. Попробуйте ещё раз.");
+      setTranscript(normalizedText);
       setWaitingForResponse(true);
-      await sendMessage({ content: text });
+      await sendMessage({ content: normalizedText });
     } catch (error) {
       setWaitingForResponse(false);
       setVoiceError(error instanceof Error ? error.message : "Голосовой ввод не сработал.");
@@ -92,8 +98,7 @@ export default function SvetlanaScreen() {
     const assistant = [...messages].reverse().find((message) => message.role === "assistant");
     if (!assistant) return;
     try {
-      const { SvetlanaVoice } = await import("../../../modules/local-ai");
-      await SvetlanaVoice.speak(assistant.content);
+      await speakWithSecureCredentials(assistant.content);
     } catch (error) {
       Alert.alert("Светлана", error instanceof Error ? error.message : "Не удалось включить озвучку.");
     }
