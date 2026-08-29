@@ -1,7 +1,7 @@
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, Pressable, StyleSheet, View, useColorScheme } from "react-native";
-import { shapeForViseme } from "./viseme-timeline";
+import { shapeForViseme, type VisemeShape } from "./viseme-timeline";
 import { SVETLANA_DESIGN, SvetlanaOrbState } from "./svetlana-design";
 import { useSvetlanaVisemes } from "./use-svetlana-visemes";
 
@@ -17,7 +17,7 @@ export function SvetlanaAvatar({ compact = false, speaking = false, visemeId, st
   const router = useRouter();
   const scheme = useColorScheme();
   const timelineShape = useSvetlanaVisemes(speaking);
-  const explicitShape = visemeId == null ? null : shapeForViseme(visemeId);
+  const explicitShape: VisemeShape | null = visemeId == null ? null : shapeForViseme(visemeId);
   const mouthShape = explicitShape ?? timelineShape;
   const size = compact ? SVETLANA_DESIGN.compactSize : SVETLANA_DESIGN.fullSize;
   const resolvedState: SvetlanaOrbState = state ?? (speaking ? "speaking" : "idle");
