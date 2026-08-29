@@ -27,23 +27,12 @@ jobs:
           failures=0
           check_file() {
             local label="$1" path="$2"
-            if [ -s "$path" ]; then
-              echo "PASS: $label"
-            else
-              echo "FAIL: $label — missing or empty: $path"
-              failures=$((failures + 1))
-            fi
+            if [ -s "$path" ]; then echo "PASS: $label"; else echo "FAIL: $label — missing or empty: $path"; failures=$((failures + 1)); fi
           }
           check_grep() {
             local label="$1" pattern="$2" path="$3"
-            if grep -Fq -- "$pattern" "$path"; then
-              echo "PASS: $label"
-            else
-              echo "FAIL: $label — pattern not found: [$pattern] in $path"
-              failures=$((failures + 1))
-            fi
+            if grep -Fq -- "$pattern" "$path"; then echo "PASS: $label"; else echo "FAIL: $label — pattern not found: [$pattern] in $path"; failures=$((failures + 1)); fi
           }
-
           echo '=== SVETLANA DESIGN GATE ==='
           check_file 'design contract exists' src/components/svetlana/svetlana-design.ts
           check_grep 'approved version' '2026-08-28-approved' src/components/svetlana/svetlana-design.ts
@@ -52,29 +41,18 @@ jobs:
           check_grep 'compactSize' 'compactSize: 80' src/components/svetlana/svetlana-design.ts
           check_grep 'mouthLayerId' 'mouthLayerId: "svetlanaMouth"' src/components/svetlana/svetlana-design.ts
           check_file 'approved portrait exists' assets/images/svetlana-approved.jpg
-
           if [ -s assets/images/svetlana-approved.jpg ]; then
             actual_sha="$(sha256sum assets/images/svetlana-approved.jpg | awk '{print $1}')"
             expected_sha="$(sed -n 's/^[[:space:]]*assetSha256: "\([0-9a-fA-F]*\)".*/\1/p' src/components/svetlana/svetlana-design.ts)"
-            if [ -n "$expected_sha" ] && [ "$actual_sha" = "$expected_sha" ]; then
-              echo "PASS: approved portrait SHA256 $actual_sha"
-            else
-              echo "FAIL: approved portrait SHA256 mismatch — expected=$expected_sha actual=$actual_sha"
-              failures=$((failures + 1))
-            fi
+            if [ -n "$expected_sha" ] && [ "$actual_sha" = "$expected_sha" ]; then echo "PASS: approved portrait SHA256 $actual_sha"; else echo "FAIL: approved portrait SHA256 mismatch — expected=$expected_sha actual=$actual_sha"; failures=$((failures + 1)); fi
           fi
-
           check_grep 'avatar imports approved portrait' 'svetlana-approved.jpg' src/components/svetlana/svetlana-avatar.tsx
           check_grep 'avatar uses SvetlanaOrbState' 'SvetlanaOrbState' src/components/svetlana/svetlana-avatar.tsx
           check_grep 'avatar uses color scheme' 'useColorScheme' src/components/svetlana/svetlana-avatar.tsx
           check_grep 'avatar uses compact contract directly' 'SVETLANA_DESIGN.compactSize' src/components/svetlana/svetlana-avatar.tsx
           check_grep 'avatar binds mouth layer directly' 'nativeID={SVETLANA_DESIGN.mouthLayerId}' src/components/svetlana/svetlana-avatar.tsx
-
           echo '=== DESIGN GATE SUMMARY ==='
-          if [ "$failures" -ne 0 ]; then
-            echo "::error::APPROVED_SVETLANA_DESIGN=FAIL failures=$failures"
-            exit 1
-          fi
+          if [ "$failures" -ne 0 ]; then echo "::error::APPROVED_SVETLANA_DESIGN=FAIL failures=$failures"; exit 1; fi
           echo 'APPROVED_SVETLANA_DESIGN=PASS'
           echo 'All Svetlana contract checks passed.' >> "$GITHUB_STEP_SUMMARY"
       - name: Java 17
@@ -111,10 +89,7 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
           yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null 2>&1 || true
-          sdkmanager --sdk_root="$ANDROID_HOME" --install \
-            "platform-tools" "platforms;android-21" "platforms;android-23" \
-            "platforms;android-35" "platforms;android-36" \
-            "build-tools;35.0.0" "build-tools;36.0.0" "ndk;28.0.13004108"
+          sdkmanager --sdk_root="$ANDROID_HOME" --install "platform-tools" "platforms;android-21" "platforms;android-23" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" "ndk;28.0.13004108"
           export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/28.0.13004108"
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
@@ -154,9 +129,7 @@ jobs:
           cp build/native/libbox.aar "$MAVEN_DIR/libbox-1.0.0.aar"
           cat > "$MAVEN_DIR/libbox-1.0.0.pom" <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
-          <project xmlns="http://maven.apache.org/POM/4.0.0"
-                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
             <modelVersion>4.0.0</modelVersion>
             <groupId>ru.mirsamozanyatykh</groupId>
             <artifactId>libbox</artifactId>
@@ -176,17 +149,12 @@ jobs:
           set -euo pipefail
           : "${ANDROID_HOME:?ANDROID_HOME отсутствует после prebuild}"
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
-
-          # Expo SDK 57 uses AGP 8.13.x. AGP 8.13 requires Gradle 8.13;
-          # the generated wrapper in this project can otherwise resolve an
-          # incompatible newer Gradle and fail during Expo module publication.
           WRAPPER='android/gradle/wrapper/gradle-wrapper.properties'
           test -s "$WRAPPER"
-          sed -i -E 's#distributionUrl=.*#distributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$WRAPPER"
-          grep -F 'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-bin.zip' "$WRAPPER"
+          sed -i -E 's#distributionUrl=.*#distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$WRAPPER"
+          grep -F 'distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip' "$WRAPPER"
           test -s android/local.properties
           cat android/local.properties
-          grep -F 'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.13-bin.zip' "$WRAPPER"
           test -f "$ANDROID_HOME/platforms/android-36/android.jar"
       - name: Проверить сгенерированный Gradle и libbox
         working-directory: android
@@ -208,7 +176,6 @@ jobs:
           org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
           org.gradle.workers.max=2
           PROPS
-          echo "--- gradle.properties tail after append: ---"
           tail -5 android/gradle.properties
       - name: Собрать отладочный APK
         id: assemble
