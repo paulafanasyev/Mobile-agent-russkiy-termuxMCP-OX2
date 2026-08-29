@@ -70,24 +70,61 @@ jobs:
       - name: Prepare strict smoke probe
         run: |
           cat > "$RUNNER_TEMP/smoke-probe.sh" <<'PROBE'
+          #!/usr/bin/env bash
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
           APK="$GITHUB_WORKSPACE/smoke.apk"
           test -s "$APK"
           adb install -r "$APK"
           adb logcat -c
-          adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1
-          sleep 60
+
+          # Do not use `monkey`: its idle-state check is flaky on headless emulator images
+          # and can abort a strict probe before the application is even inspected.
+          adb shell am force-stop ru.mirsamozanyatykh.mobileagent || true
+          adb shell am start -W \
+            -a android.intent.action.MAIN \
+            -c android.intent.category.LAUNCHER \
+            -p ru.mirsamozanyatykh.mobileagent
+
+          # Wait for the actual application process and UI instead of assuming a fixed delay.
+          launched=0
+          for _ in $(seq 1 30); do
+            PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
+            if [ -n "$PID" ]; then launched=1; break; fi
+            sleep 2
+          done
+          test "$launched" -eq 1 || {
+            echo '::error::OX2 process did not start'
+            adb shell dumpsys activity activities | tail -160 || true
+            adb logcat -d -v time | tail -240 || true
+            exit 1
+          }
 
           PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
           PS_LINE=$(adb shell ps -A 2>/dev/null | tr -d '\r' | grep mirsamozanyatykh || true)
           RAW_RESUMED=$(adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E 'ResumedActivity|topResumedActivity' | grep mirsamozanyatykh || true)
           FOCUS=$(adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep mCurrentFocus || true)
 
-          # UI dump is a HARD GATE: never suppress failure and never accept empty evidence.
-          adb shell uiautomator dump /sdcard/ui.xml
-          adb shell cat /sdcard/ui.xml > ui-dump.xml
-          test -s ui-dump.xml
+          dump_ui() {
+            rm -f ui-dump.xml
+            local out=''
+            for _ in $(seq 1 15); do
+              if adb shell uiautomator dump /sdcard/ui.xml >/tmp/uiautomator-dump.txt 2>&1; then
+                if adb shell cat /sdcard/ui.xml > ui-dump.xml 2>/dev/null && [ -s ui-dump.xml ]; then
+                  return 0
+                fi
+              fi
+              sleep 2
+            done
+            echo '::error::UIAutomator dump failed or produced empty XML'
+            cat /tmp/uiautomator-dump.txt 2>/dev/null || true
+            adb shell dumpsys activity activities | tail -160 || true
+            adb shell dumpsys window | tail -120 || true
+            adb logcat -d -v time | tail -240 || true
+            return 1
+          }
+
+          dump_ui
 
           # Current Svetlana UI contract.
           MARKERS=$(grep -oE 'Светлана|Голосовой чат|Говорить|Слушаю…|Светлана готовит ответ…' ui-dump.xml | sort -u || true)
@@ -103,9 +140,14 @@ jobs:
           CX=$(( (X1 + X2) / 2 )); CY=$(( (Y1 + Y2) / 2 ))
           adb shell input tap "$CX" "$CY"
           sleep 2
-          adb shell uiautomator dump /sdcard/ui-after.xml
-          adb shell cat /sdcard/ui-after.xml > ui-dump-after.xml
-          test -s ui-dump-after.xml
+          rm -f ui-dump-after.xml
+          adb shell uiautomator dump /sdcard/ui-after.xml >/tmp/uiautomator-after.txt 2>&1 || true
+          adb shell cat /sdcard/ui-after.xml > ui-dump-after.xml 2>/dev/null || true
+          test -s ui-dump-after.xml || {
+            echo '::error::Post-tap UI dump failed or empty'
+            cat /tmp/uiautomator-after.txt 2>/dev/null || true
+            exit 1
+          }
           grep -Eq 'Слушаю…|Слушаю' ui-dump-after.xml || { echo '::error::Voice activation did not reach listening state'; exit 1; }
           echo "ACTIVATION_TAP=ok($CX,$CY)" > activation.txt
 
@@ -141,7 +183,8 @@ jobs:
 
       - name: KVM
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node/kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
       - name: Strict Smoke v4 на эмуляторе
