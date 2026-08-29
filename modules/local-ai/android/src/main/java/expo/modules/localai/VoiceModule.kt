@@ -45,7 +45,7 @@ class VoiceModule : Module() {
       )
     }
 
-    AsyncFunction("listen") {
+    AsyncFunction("listen") Coroutine {
       val context = appContext.reactContext
         ?: throw IllegalStateException("Android context unavailable")
       if (androidx.core.content.ContextCompat.checkSelfPermission(
@@ -191,7 +191,7 @@ class VoiceModule : Module() {
       }
     }
 
-    AsyncFunction("speakOffline") { text: String ->
+    AsyncFunction("speakOffline") Coroutine { text: String ->
       require(text.isNotBlank()) { "Speech text must not be blank" }
       val context = appContext.reactContext
         ?: throw IllegalStateException("Android context unavailable")
