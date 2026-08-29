@@ -10,8 +10,10 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.microsoft.cognitiveservices.speech.AudioConfig
+import com.microsoft.cognitiveservices.speech.CancellationReason
 import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
+import com.microsoft.cognitiveservices.speech.SpeechSynthesisCancellationDetails
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisResult
 import com.microsoft.cognitiveservices.speech.SpeechSynthesizer
 import expo.modules.kotlin.modules.Module
@@ -162,8 +164,22 @@ class VoiceModule : Module() {
         if (result.reason == ResultReason.SynthesizingAudioCompleted) {
           sendEvent("onSpeechCompleted", mapOf("resultId" to result.resultId))
           true
+        } else if (result.reason == ResultReason.Canceled) {
+          val cancellation = SpeechSynthesisCancellationDetails.fromResult(result)
+          val details = buildString {
+            append("Azure Speech synthesis canceled: reason=")
+            append(cancellation.reason)
+            if (cancellation.reason == CancellationReason.Error) {
+              append(", errorCode=")
+              append(cancellation.errorCode)
+              append(", errorDetails=")
+              append(cancellation.errorDetails)
+            }
+          }
+          sendEvent("onSpeechError", mapOf("message" to details))
+          throw IllegalStateException(details)
         } else {
-          val details = result.errorDetails ?: "Azure Speech synthesis failed"
+          val details = "Azure Speech synthesis returned unexpected result reason: ${result.reason}"
           sendEvent("onSpeechError", mapOf("message" to details))
           throw IllegalStateException(details)
         }
