@@ -1,8 +1,21 @@
 apply plugin: 'com.android.library'
 apply plugin: 'expo-module-gradle-plugin'
 
+expoModule {
+  // This module is bundled into the application and is not published as a standalone AAR.
+  canBePublished false
+}
+
+group = 'ru.mirsamozanyatykh'
+version = '2.1.1'
+
 android {
   namespace 'expo.modules.localai'
+  defaultConfig {
+    minSdkVersion 23
+    versionCode 1
+    versionName '2.1.1'
+  }
 }
 
 dependencies {
