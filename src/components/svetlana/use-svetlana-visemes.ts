@@ -7,15 +7,15 @@ export function useSvetlanaVisemes(speaking: boolean): VisemeShape | null {
   const [shape, setShape] = useState<VisemeShape | null>(null);
   const timelineRef = useRef<VisemeKeyframe[]>([]);
   const startedAtMs = useRef<number | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const frameRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!speaking) {
       timelineRef.current = [];
       startedAtMs.current = null;
       setShape(null);
-      if (timerRef.current !== null) clearTimeout(timerRef.current);
-      timerRef.current = null;
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
       return;
     }
 
@@ -24,7 +24,7 @@ export function useSvetlanaVisemes(speaking: boolean): VisemeShape | null {
       const elapsed = Math.max(0, Date.now() - startedAtMs.current);
       const events = timelineRef.current;
       if (events.length > 0) setShape(shapeAtTime(events, elapsed));
-      timerRef.current = setTimeout(tick, 16);
+      frameRef.current = requestAnimationFrame(tick);
     };
 
     const subscription = SvetlanaVoice.addListener("onVisemeReceived", (event: VisemeReceivedEvent) => {
@@ -37,14 +37,23 @@ export function useSvetlanaVisemes(speaking: boolean): VisemeShape | null {
         visemeId: event.visemeId,
         shape: shapeForViseme(event.visemeId),
       };
-      timelineRef.current = [...timelineRef.current, next].sort((a, b) => a.timeMs - b.timeMs);
-      setShape(shapeAtTime(timelineRef.current, event.audioOffsetMs));
+      const events = timelineRef.current;
+      const last = events[events.length - 1];
+      if (last?.timeMs === next.timeMs) {
+        events[events.length - 1] = next;
+      } else if (!last || last.timeMs < next.timeMs) {
+        events.push(next);
+      } else {
+        events.push(next);
+        events.sort((a, b) => a.timeMs - b.timeMs);
+      }
+      setShape(shapeAtTime(events, event.audioOffsetMs));
     });
 
     return () => {
       subscription.remove();
-      if (timerRef.current !== null) clearTimeout(timerRef.current);
-      timerRef.current = null;
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
     };
   }, [speaking]);
 
