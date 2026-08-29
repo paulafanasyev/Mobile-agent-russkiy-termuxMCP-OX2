@@ -64,6 +64,7 @@
           }
         }
       }],
+      "./plugins/with-android-dependency-convergence",
       "./plugins/with-litert-lm",
       "./plugins/with-background-agent",
       "./plugins/with-scheduler-alarm",
