@@ -16,6 +16,12 @@ async function requestMicrophonePermission() {
   return result === PermissionsAndroid.RESULTS.GRANTED;
 }
 
+async function speakWithConfiguredVoice(text: string) {
+  const { SvetlanaVoice, getAzureSpeechCredentials } = await import("../../../modules/local-ai");
+  const { subscriptionKey, region } = await getAzureSpeechCredentials();
+  return SvetlanaVoice.speak(text, subscriptionKey, region);
+}
+
 export default function SvetlanaScreen() {
   const { messages, sendMessage, currentConversationRunStatus } = useChat();
   const [listening, setListening] = useState(false);
@@ -30,8 +36,7 @@ export default function SvetlanaScreen() {
     if (!assistant || assistant.id === lastVoiceAssistantId.current) return;
     lastVoiceAssistantId.current = assistant.id;
     setWaitingForResponse(false);
-    void import("../../../modules/local-ai")
-      .then(({ SvetlanaVoice }) => SvetlanaVoice.speak(assistant.content))
+    void speakWithConfiguredVoice(assistant.content)
       .catch((error) => setVoiceError(error instanceof Error ? error.message : "Не удалось озвучить ответ."));
   }, [messages, waitingForResponse]);
 
@@ -72,8 +77,7 @@ export default function SvetlanaScreen() {
     const assistant = [...messages].reverse().find((message) => message.role === "assistant");
     if (!assistant) return;
     try {
-      const { SvetlanaVoice } = await import("../../../modules/local-ai");
-      await SvetlanaVoice.speak(assistant.content);
+      await speakWithConfiguredVoice(assistant.content);
     } catch (error) {
       Alert.alert("Светлана", error instanceof Error ? error.message : "Не удалось включить озвучку.");
     }
