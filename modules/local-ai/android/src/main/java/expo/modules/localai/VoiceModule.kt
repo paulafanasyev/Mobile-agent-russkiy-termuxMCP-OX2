@@ -14,6 +14,7 @@ import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisCancellationDetails
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisResult
+import com.microsoft.cognitiveservices.speech.SpeechSynthesisOutputFormat
 import com.microsoft.cognitiveservices.speech.SpeechSynthesizer
 import com.microsoft.cognitiveservices.speech.audio.AudioConfig
 import expo.modules.kotlin.functions.Coroutine
@@ -46,7 +47,7 @@ class VoiceModule : Module() {
       )
     }
 
-    AsyncFunction("listen") Coroutine {
+    AsyncFunction("listen") Coroutine { ->
       val context = appContext.reactContext
         ?: throw IllegalStateException("Android context unavailable")
       if (androidx.core.content.ContextCompat.checkSelfPermission(
@@ -143,7 +144,7 @@ class VoiceModule : Module() {
         speechConfig.setSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Audio24Khz160KBitRateMonoMp3)
         val audioConfig = AudioConfig.fromDefaultSpeakerOutput()
         val synthesizer = SpeechSynthesizer(speechConfig, audioConfig)
-        currentSynthesizer = synthesizer
+        this@VoiceModule.synthesizer = synthesizer
         synthesizer.VisemeReceived.addEventListener { _, event ->
           sendEvent("onVisemeReceived", mapOf(
             "visemeId" to event.getVisemeId(),
@@ -162,8 +163,8 @@ class VoiceModule : Module() {
       } catch (e: Exception) {
         throw IllegalStateException("Azure synthesis error: ${e.message}")
       } finally {
-        currentSynthesizer?.close()
-        currentSynthesizer = null
+        this@VoiceModule.synthesizer?.close()
+        this@VoiceModule.synthesizer = null
       }
     }
 
@@ -218,7 +219,7 @@ class VoiceModule : Module() {
       true
     }
 
-    AsyncFunction("stopSpeaking") Coroutine {
+    AsyncFunction("stopSpeaking") Coroutine { ->
       synthesizer?.StopSpeakingAsync()?.get()
       synthesizer?.close()
       synthesizer = null
