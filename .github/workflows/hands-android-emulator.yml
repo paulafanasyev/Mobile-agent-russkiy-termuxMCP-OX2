@@ -112,7 +112,6 @@ jobs:
             hands-apk-sha256.txt
             hands-runtime.txt
             hands-accessibility-dump.txt
-            hands-runtime.txt
             hands-launch.txt
             hands-top.txt
             hands-target-pid.txt
