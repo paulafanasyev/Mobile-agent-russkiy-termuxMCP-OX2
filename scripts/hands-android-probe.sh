@@ -2,11 +2,21 @@
 set -euo pipefail
 ADB='adb'
 PKG='ru.mirsamozanyatykh.mobileagent'
+ACCESSIBILITY_SERVICE="$PKG/.service.Ox2AccessibilityService"
 
 $ADB install -r "$GITHUB_WORKSPACE/hands-smoke.apk"
 echo 'INSTALL=PASS' | tee hands-runtime.txt
 $ADB shell pm grant "$PKG" android.permission.RECORD_AUDIO 2>/dev/null || true
 echo "RECORD_AUDIO_GRANT=$( $ADB shell dumpsys package "$PKG" | tr -d '\r' | grep 'android.permission.RECORD_AUDIO' | head -1 || true )" | tee -a hands-runtime.txt
+
+# CI test-environment setup: enable the app's real AccessibilityService.
+# This changes only the disposable emulator state; production code is untouched.
+$ADB shell settings put secure enabled_accessibility_services "$ACCESSIBILITY_SERVICE"
+ACCESSIBILITY_STATE=$($ADB shell settings get secure enabled_accessibility_services | tr -d '\r')
+echo "ACCESSIBILITY_SERVICE_STATE=$ACCESSIBILITY_STATE" | tee -a hands-runtime.txt
+echo "$ACCESSIBILITY_STATE" | grep -Fq "$ACCESSIBILITY_SERVICE"
+echo 'ACCESSIBILITY_SERVICE_ENABLED=PASS' | tee -a hands-runtime.txt
+
 $ADB logcat -c
 # Empty host + /hands-smoke path: three slashes are intentional.
 $ADB shell am start -W -a android.intent.action.VIEW -d 'mobile-agent:///hands-smoke' -p "$PKG" | tee hands-launch.txt
