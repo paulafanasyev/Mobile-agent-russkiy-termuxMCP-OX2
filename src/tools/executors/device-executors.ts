@@ -1,23 +1,16 @@
 /**
- * P1-2: Native executors for device tools.
+ * P0 native executors for device tools.
  *
- * Architecture (cycle 145):
- * - device-tools.ts = the single source of session approval state;
- * - this file = execution only, consuming the public approval API;
- * - registry = contracts; executors = machine.
- *
- * SAF restriction: only content:// URIs with granted permissions.
- * QUERY_ALL_PACKAGES is intentionally not used (approved-only v1).
+ * App discovery is launcher-scoped so Android 11+ package visibility rules are
+ * respected without QUERY_ALL_PACKAGES. App launches are protected by the
+ * normal tool-approval layer; there is no second, dead session-approval gate.
  */
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import { requireNativeModule } from 'expo';
 import { z } from 'zod';
-import {
-  isAppApprovedForSession,
-  getSessionApprovedPackages,
-} from '../device-tools';
+import { HANDS_MAX_TREE_NODES } from '../../../modules/accessibility-agent';
 
 export const openAppSchema = z.object({
   packageName: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i),
@@ -32,6 +25,7 @@ export const readFileSchema = z.object({
 
 type NativeAccessibilityAgent = {
   getTree(maxNodes: number): Promise<Array<{ id: string; packageName: string | null }>>;
+  listLaunchableApps(): Promise<Array<{ name: string; packageName: string }>>;
 };
 
 const Native = Platform.OS === 'android'
@@ -43,11 +37,13 @@ export async function executeListApps(): Promise<{
   count: number;
   apps: Array<{ name: string; packageName: string }>;
 }> {
-  const apps = getSessionApprovedPackages().map((pkg) => ({
-    name: pkg.split('.').pop() ?? pkg,
-    packageName: pkg,
-  }));
-  return { status: 'listed', count: apps.length, apps };
+  if (!Native) return { status: 'unsupported_platform', count: 0, apps: [] };
+  try {
+    const apps = await Native.listLaunchableApps();
+    return { status: 'listed', count: apps.length, apps };
+  } catch {
+    return { status: 'discovery_failed', count: 0, apps: [] };
+  }
 }
 
 async function getForegroundPackage(): Promise<string | null> {
@@ -60,7 +56,7 @@ async function getForegroundPackage(): Promise<string | null> {
   }
 }
 
-async function waitForForegroundPackage(packageName: string, timeoutMs = 2000): Promise<boolean> {
+async function waitForForegroundPackage(packageName: string, timeoutMs = 2500): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   do {
     if (await getForegroundPackage() === packageName) return true;
@@ -70,26 +66,17 @@ async function waitForForegroundPackage(packageName: string, timeoutMs = 2000): 
   return false;
 }
 
-/** device.open_app — launch only after explicit session approval and verify foreground transition. */
+/** device.open_app — launch after the normal tool-approval layer and verify foreground transition. */
 export async function executeOpenApp(
   args: z.infer<typeof openAppSchema>,
 ): Promise<{ status: string; packageName: string; verified: boolean }> {
-  if (!isAppApprovedForSession(args.packageName)) {
-    return { status: 'needs_approval', packageName: args.packageName, verified: false };
-  }
-
-  const beforePackage = await getForegroundPackage();
-
   try {
     await IntentLauncher.openApplication(args.packageName);
   } catch {
     return { status: 'launch_failed', packageName: args.packageName, verified: false };
   }
 
-  // Verification requires an actual foreground transition, not merely a resolved launch Promise.
-  const transitioned = beforePackage !== args.packageName;
-  const verified = transitioned && await waitForForegroundPackage(args.packageName);
-
+  const verified = await waitForForegroundPackage(args.packageName);
   return {
     status: verified ? 'launched_verified' : 'launched_unverified',
     packageName: args.packageName,
@@ -117,3 +104,5 @@ export async function executeFileRead(
     truncated,
   };
 }
+
+void HANDS_MAX_TREE_NODES;
