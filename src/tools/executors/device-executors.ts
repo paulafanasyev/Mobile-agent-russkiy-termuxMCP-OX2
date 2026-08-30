@@ -55,10 +55,18 @@ async function getForegroundPackage(): Promise<string | null> {
   }
 }
 
-async function waitForForegroundPackage(packageName: string, timeoutMs = 2500): Promise<boolean> {
+async function waitForForegroundPackage(
+  packageName: string,
+  previousPackage: string | null,
+  timeoutMs = 2500,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   do {
-    if (await getForegroundPackage() === packageName) return true;
+    const current = await getForegroundPackage();
+    // Verification requires an observed foreground transition. This prevents
+    // a launch request from being reported verified merely because the target
+    // app was already foreground before the request.
+    if (current === packageName && previousPackage !== packageName) return true;
     if (Date.now() >= deadline) break;
     await new Promise((resolve) => setTimeout(resolve, 100));
   } while (true);
@@ -69,13 +77,15 @@ async function waitForForegroundPackage(packageName: string, timeoutMs = 2500): 
 export async function executeOpenApp(
   args: z.infer<typeof openAppSchema>,
 ): Promise<{ status: string; packageName: string; verified: boolean }> {
+  const previousPackage = await getForegroundPackage();
+
   try {
     await IntentLauncher.openApplication(args.packageName);
   } catch {
     return { status: 'launch_failed', packageName: args.packageName, verified: false };
   }
 
-  const verified = await waitForForegroundPackage(args.packageName);
+  const verified = await waitForForegroundPackage(args.packageName, previousPackage);
   return {
     status: verified ? 'launched_verified' : 'launched_unverified',
     packageName: args.packageName,
