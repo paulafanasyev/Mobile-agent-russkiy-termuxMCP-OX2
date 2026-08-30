@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: android-release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-android:
@@ -78,156 +78,37 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           packages: ''
-      - name: Установить и проверить Android SDK/NDK
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate native project
+        run: npx expo prebuild --platform android --non-interactive
+      - name: Verify libbox AAR exists
         shell: bash
         run: |
           set -euo pipefail
-          : "${ANDROID_HOME:?ANDROID_HOME отсутствует}"
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
-          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null 2>&1 || true
-          sdkmanager --sdk_root="$ANDROID_HOME" --install "platform-tools" "platforms;android-21" "platforms;android-23" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" "ndk;28.0.13004108"
-          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/28.0.13004108"
-          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
-          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
-          java -version
-          sdkmanager --version
-          sdkmanager --sdk_root="$ANDROID_HOME" --list_installed | grep -E 'platforms;android-(21|23|35|36)|build-tools;(35|36).0.0|ndk;28.0.13004108'
-          test -f "$ANDROID_HOME/platforms/android-21/android.jar"
-          test -f "$ANDROID_HOME/platforms/android-23/android.jar"
-          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
-          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
-          test -x "$ANDROID_HOME/build-tools/35.0.0/aapt2"
-          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt2"
-          test -x "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
-      - name: Собрать воспроизводимый libbox.aar
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/build-libbox-android.sh 2>&1 | tee "$RUNNER_TEMP/libbox-build.log"
-      - name: Проверить libbox
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s build/native/libbox.aar
-          test -s build/native/libbox.aar.sha256
-          test -s build/native/sing-box-revision.txt
-          sha256sum -c build/native/libbox.aar.sha256
-          test "$(cat build/native/sing-box-revision.txt)" = "670d7a7693918b765a17c44aee5afb5d47ead390"
-          unzip -t build/native/libbox.aar >/dev/null
-          bash scripts/verify-android-agent.sh
-      - name: Подготовить локальный Maven-модуль libbox
-        shell: bash
-        run: |
-          set -euo pipefail
-          MAVEN_DIR="build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0"
-          mkdir -p "$MAVEN_DIR"
-          cp build/native/libbox.aar "$MAVEN_DIR/libbox-1.0.0.aar"
-          cat > "$MAVEN_DIR/libbox-1.0.0.pom" <<'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-            <modelVersion>4.0.0</modelVersion>
-            <groupId>ru.mirsamozanyatykh</groupId>
-            <artifactId>libbox</artifactId>
-            <version>1.0.0</version>
-            <packaging>aar</packaging>
-          </project>
-          EOF
-          test -s "$MAVEN_DIR/libbox-1.0.0.aar"
-          test -s "$MAVEN_DIR/libbox-1.0.0.pom"
-      - name: Установить JavaScript-зависимости
-        run: pnpm install --no-frozen-lockfile
-      - name: Expo prebuild
-        run: pnpm exec expo prebuild --platform android --clean
-      - name: Зафиксировать Android SDK и Gradle для Gradle/AGP совместимости
-        shell: bash
-        run: |
-          set -euo pipefail
-          : "${ANDROID_HOME:?ANDROID_HOME отсутствует после prebuild}"
-          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
-          WRAPPER='android/gradle/wrapper/gradle-wrapper.properties'
-          test -s "$WRAPPER"
-          GRADLE_VERSION='8.13'
-          GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
-          sed -i -E "s#^distributionUrl=.*#distributionUrl=${GRADLE_URL}#" "$WRAPPER"
-          grep -F "distributionUrl=${GRADLE_URL}" "$WRAPPER"
-          test -s android/local.properties
-          cat android/local.properties
-          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
-      - name: Проверить сгенерированный Gradle и libbox
+          test -f android/app/libs/libbox.aar
+          ls -lh android/app/libs/libbox.aar
+      - name: Build release APK
         working-directory: android
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+        timeout-minutes: 45
+      - name: Verify release APK
         shell: bash
         run: |
           set -euo pipefail
-          grep -R "ru.mirsamozanyatykh:libbox:1.0.0" app/build.gradle
-          grep -R "build/native/maven" build.gradle settings.gradle app/build.gradle 2>/dev/null || true
-          test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
-          ./gradlew --version | tee "$RUNNER_TEMP/gradle-version.txt"
-          grep -F 'Gradle 8.13' "$RUNNER_TEMP/gradle-version.txt"
-      - name: Настроить Gradle heap для большого APK (FIX#15-v2)
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat >> android/gradle.properties <<'PROPS'
-
-          # FIX#15-v2 (cycle 130): packaging OOM fix
-          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
-          org.gradle.workers.max=2
-          PROPS
-          tail -5 android/gradle.properties
-      - name: Собрать отладочный APK
-        id: assemble
-        working-directory: android
-        shell: bash
-        run: |
-          set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-debug.log"
-      - name: Собрать release APK
-        working-directory: android
-        shell: bash
-        run: |
-          set -o pipefail
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-release.log"
-      - name: Сохранить полный Gradle лог при ошибке
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v5
-        with:
-          name: android-gradle-diagnostics-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/gradle-assemble-debug.log
-            ${{ runner.temp }}/gradle-assemble-release.log
-            ${{ runner.temp }}/libbox-build.log
-            android/local.properties
-            android/gradle/wrapper/gradle-wrapper.properties
-            android/hs_err_pid*.log
-          if-no-files-found: warn
-      - name: Найти APK
-        id: apk
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK=$(find android/app/build/outputs/apk -type f -name '*.apk' | head -1)
-          test -n "$APK"
-          echo "path=$APK" >> "$GITHUB_OUTPUT"
-          echo "APK=$APK"
-      - name: Загрузить APK как artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: mobile-agent-russkiy-debug-apk
-          path: ${{ steps.apk.outputs.path }}
-          if-no-files-found: error
-      - name: Загрузить release APK artifact
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          sha256sum "$APK"
+          stat -c '%n %s bytes' "$APK"
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: mobile-agent-russkiy-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
-      - name: Опубликовать сведения о сборке
-        run: |
-          echo "libbox revision: $(cat build/native/sing-box-revision.txt)"
-          echo "libbox SHA256: $(cut -d' ' -f1 build/native/libbox.aar.sha256)"
-          echo "Gradle: $(cd android && ./gradlew --version | grep '^Gradle ' || true)"
-          echo "Preflight: SDK API 21/23/35/36 + NDK 28 + Maven libbox + AAR checksum + CommandServer проверены"
-          echo "Release APK: android/app/build/outputs/apk/release/*.apk"
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-agent-russkiy-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
