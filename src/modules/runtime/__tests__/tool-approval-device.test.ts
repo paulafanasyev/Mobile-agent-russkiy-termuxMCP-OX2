@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const secureStore = new Map<string, string>();
+const alwaysAllowed = new Set<string>();
 
-vi.mock("expo-secure-store", () => ({
-  getItemAsync: vi.fn(async (key: string) => secureStore.get(key) ?? null),
-  setItemAsync: vi.fn(async (key: string, value: string) => { secureStore.set(key, value); }),
-  deleteItemAsync: vi.fn(async (key: string) => { secureStore.delete(key); }),
+vi.mock("@/core/services/tool-approval-store", () => ({
+  isToolAlwaysAllowed: vi.fn(async (toolName: string) => alwaysAllowed.has(toolName)),
+  setToolAlwaysAllowed: vi.fn(async (toolName: string, allowed: boolean) => {
+    if (allowed) alwaysAllowed.add(toolName);
+    else alwaysAllowed.delete(toolName);
+  }),
 }));
 
 import {
@@ -18,7 +20,7 @@ import { z } from "zod";
 
 describe("device tool approval bridge", () => {
   beforeEach(() => {
-    secureStore.clear();
+    alwaysAllowed.clear();
     setDeviceToolApprovalHandler(null);
   });
 
