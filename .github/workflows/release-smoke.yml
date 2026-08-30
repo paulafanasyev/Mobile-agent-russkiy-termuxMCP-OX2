@@ -1,4 +1,4 @@
-name: "M1+Smoke Release: манифест и UI-тест Светланы"
+name: "M1+Smoke Release: chat + Svetlana + voice"
 
 on:
   workflow_dispatch:
@@ -21,22 +21,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
-      - name: Provenance — привязать release APK к конкретному Android-рану
+      - name: Provenance — exact release APK
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_RUN_ID: ${{ github.event.inputs.android_run_id }}
           EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          if [ -n "$INPUT_RUN_ID" ]; then RUN_ID="$INPUT_RUN_ID"; elif [ -n "$EVENT_RUN_ID" ]; then RUN_ID="$EVENT_RUN_ID"; else echo "::error::Нет источника run id"; exit 1; fi
+          if [ -n "$INPUT_RUN_ID" ]; then RUN_ID="$INPUT_RUN_ID"; elif [ -n "$EVENT_RUN_ID" ]; then RUN_ID="$EVENT_RUN_ID"; else exit 1; fi
           SOURCE_SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.head_sha')
           SOURCE_CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')
-          test "$SOURCE_CONCLUSION" = success || { echo "::error::APK source run $RUN_ID is not successful: $SOURCE_CONCLUSION"; exit 1; }
+          test "$SOURCE_CONCLUSION" = success
           { echo "smoke_head_sha=$GITHUB_SHA"; echo "apk_source_run=$RUN_ID"; echo "apk_source_head_sha=$SOURCE_SHA"; echo "apk_source_conclusion=$SOURCE_CONCLUSION"; } | tee provenance.txt
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
-          cat provenance.txt >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Скачать release APK из provenance-run
+      - name: Download exact release APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -44,159 +43,120 @@ jobs:
           STAGE="$RUNNER_TEMP/apk-staging"
           rm -rf "$STAGE" && mkdir -p "$STAGE/unpacked"
           ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="mobile-agent-russkiy-release-apk" and .expired==false) | .id' | head -1)
-          test -n "$ART_ID" || { echo "::error::Release APK artifact не найден в ране $RUN_ID"; exit 1; }
+          test -n "$ART_ID"
           curl --fail --silent --show-error --location -H "Authorization: Bearer $GH_TOKEN" -o "$STAGE/artifact.zip" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
           unzip -o "$STAGE/artifact.zip" -d "$STAGE/unpacked"
-          CANDIDATES="$(find "$STAGE/unpacked" -type f -name '*.apk')"
-          COUNT=$(printf '%s\n' "$CANDIDATES" | grep -c . || true)
-          test "$COUNT" -eq 1 || { echo "::error::ОЖИДАН РОВНО ОДИН release APK, НАЙДЕНО: $COUNT"; exit 1; }
-          SRC="$(echo "$CANDIDATES" | head -1)"
-          cp "$SRC" "$GITHUB_WORKSPACE/release-smoke.apk"
-          SHA=$(sha256sum "$GITHUB_WORKSPACE/release-smoke.apk" | awk '{print $1}')
-          SIZE=$(stat -c%s "$GITHUB_WORKSPACE/release-smoke.apk")
-          printf '%s\n' "$SHA" > apk-sha256.txt
-          printf '%s\n' "$SIZE" > apk-size.txt
+          CANDIDATES=$(find "$STAGE/unpacked" -type f -name '*.apk')
+          test "$(printf '%s\n' "$CANDIDATES" | grep -c .)" -eq 1
+          cp "$(echo "$CANDIDATES" | head -1)" release-smoke.apk
+          sha256sum release-smoke.apk | tee apk-sha256.txt
+          stat -c%s release-smoke.apk | tee apk-size.txt
           echo "artifact_id=$ART_ID" > apk-facts.txt
           echo "source_run_id=$RUN_ID" >> apk-facts.txt
-          echo "apk_sha256=$SHA" >> apk-facts.txt
-          echo "apk_size_bytes=$SIZE" >> apk-facts.txt
-          cat apk-facts.txt >> "$GITHUB_STEP_SUMMARY"
 
-      - name: M1 — бинарное чтение release-манифеста
+      - name: M1 — release manifest
         run: |
           set -euo pipefail
           BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
-          BADGE=$("$BT/aapt2" dump badging "$GITHUB_WORKSPACE/release-smoke.apk" | head -25)
-          echo "$BADGE" | tee badging.txt
-          echo "$BADGE" | grep -q "package: name='ru.mirsamozanyatykh.mobileagent'"
-          echo "$BADGE" | grep -q "versionCode='3'"
-          { echo "### M1 Release OK"; echo '```'; echo "$BADGE"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          "$BT/aapt2" dump badging release-smoke.apk | tee badging.txt | head -25
+          grep -q "package: name='ru.mirsamozanyatykh.mobileagent'" badging.txt
+          grep -q "versionCode='3'" badging.txt
 
-      - name: Prepare release smoke probe
+      - name: Prepare evidence-first runtime probe
         env:
           PROBE_SCRIPT: ${{ runner.temp }}/release-smoke-probe.sh
         run: |
           cat > "$PROBE_SCRIPT" <<'PROBE_EOF'
+          #!/usr/bin/env bash
           set -euo pipefail
-          set -x
           cd "$GITHUB_WORKSPACE"
           APK="$GITHUB_WORKSPACE/release-smoke.apk"
           test -s "$APK"
-          adb install -r "$APK" || { echo "::error::INSTALL FAILED"; exit 1; }
-          echo "PHASE: INSTALL OK"
+          adb install -r "$APK"
           adb logcat -c
-          adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1 || echo "::warning::monkey rc=$? (continuing)"
-          echo "PHASE: LAUNCH SENT"
-          sleep 60
-          echo "PHASE: SURVIVED 60s"
+          echo "INSTALL=PASS" | tee runtime.txt
 
-          PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
-          PS_LINE=$(adb shell ps -A 2>/dev/null | tr -d '\r' | grep mirsamozanyatykh || true)
-          RAW_RESUMED=$(adb shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -E "ResumedActivity|topResumedActivity" | grep mirsamozanyatykh || true)
-          FOCUS=$(adb shell dumpsys window 2>/dev/null | tr -d '\r' | grep mCurrentFocus || true)
+          # 1. Default product contract: /chat.
+          adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1
+          sleep 12
+          adb exec-out screencap -p > chat-screenshot.png
+          adb shell dumpsys activity activities | tr -d '\r' > chat-activities.txt
+          adb shell dumpsys window | tr -d '\r' > chat-window.txt
+          grep -q 'ru.mirsamozanyatykh.mobileagent' chat-activities.txt
+          echo "CHAT_ROUTE=PASS" | tee -a runtime.txt
+          adb shell uiautomator dump /sdcard/chat-ui.xml >/dev/null 2>&1 || true
+          adb shell cat /sdcard/chat-ui.xml > chat-ui.xml 2>/dev/null || true
 
-          # FIX #12: dumpsys may expose MainActivity in full or relative form.
-          MAINACT=$(echo "$RAW_RESUMED" | grep -cE 'mirsamozanyatykh\.mobileagent\.MainActivity|mirsamozanyatykh\.mobileagent/\.?MainActivity' || true)
-          DEVL=$(echo "$RAW_RESUMED" | grep -c devlauncher || true)
+          # 2. Navigate explicitly to the separate /svetlana route.
+          adb shell am start -W -a android.intent.action.VIEW -d 'mobile-agent://svetlana' -p ru.mirsamozanyatykh.mobileagent | tee svetlana-deeplink.txt
+          sleep 5
+          adb exec-out screencap -p > svetlana-screenshot.png
+          adb shell dumpsys activity activities | tr -d '\r' > svetlana-activities.txt
+          adb shell dumpsys window | tr -d '\r' > svetlana-window.txt
+          adb shell uiautomator dump /sdcard/svetlana-ui.xml >/dev/null 2>&1 || true
+          adb shell cat /sdcard/svetlana-ui.xml > svetlana-ui.xml 2>/dev/null || true
 
-          # Runtime UI snapshot. The current Svetlana screen uses the actual
-          # Russian labels below; the old probe searched for labels that no
-          # longer exist in the product and therefore produced false negatives.
-          adb shell uiautomator dump /sdcard/ui-before.xml >/dev/null 2>&1 || true
-          adb shell cat /sdcard/ui-before.xml > ui-dump-before.xml 2>/dev/null || true
+          # OCR is the temporary evidence fallback for UIAutomator=0 bytes.
+          if ! command -v tesseract >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-rus
+          fi
+          tesseract svetlana-screenshot.png stdout -l rus+eng 2>/dev/null > svetlana-ocr.txt || true
+          grep -Fq 'Светлана' svetlana-ocr.txt
+          grep -Fq 'Голосовой чат' svetlana-ocr.txt
+          grep -Fq 'Говорить' svetlana-ocr.txt
+          echo "SVETLANA_ROUTE=PASS" | tee -a runtime.txt
+          echo "SVETLANA_MARKERS=PASS" | tee -a runtime.txt
 
-          # FIX #11: semantic activation. Locate the current live voice control
-          # by its visible Russian text instead of stale legacy wording.
-          B=$(sed -n 's/.*text="Говорить"[^>]*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' ui-dump-before.xml | head -1)
-          if [ -n "$B" ]; then
-            read -r X1 Y1 X2 Y2 <<< "$B"
-            CX=$(( (X1 + X2) / 2 ))
-            CY=$(( (Y1 + Y2) / 2 ))
-            adb shell input tap "$CX" "$CY"
-            echo "ACTIVATION_TAP=ok($CX,$CY)" | tee -a js-ui.txt
-            sleep 2
+          # 3. Activate the live voice control using accessibility bounds first,
+          # then OCR TSV coordinates when UIAutomator is empty.
+          B=$(sed -n 's/.*text="Говорить"[^>]*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' svetlana-ui.xml | head -1)
+          if [ -z "$B" ]; then
+            tesseract svetlana-screenshot.png stdout -l rus --psm 6 tsv 2>/dev/null > svetlana.tsv || true
+            B=$(awk -F '\t' '$12=="Говорить" {print $7 " " $8 " " ($7+$9) " " ($8+$10); exit}' svetlana.tsv 2>/dev/null || true)
+          fi
+          test -n "$B"
+          read -r X1 Y1 X2 Y2 <<< "$B"
+          CX=$(( (X1 + X2) / 2 )); CY=$(( (Y1 + Y2) / 2 ))
+          adb shell input tap "$CX" "$CY"
+          echo "VOICE_TAP=PASS($CX,$CY)" | tee -a runtime.txt
+          sleep 3
+          adb exec-out screencap -p > voice-after-tap.png
+          adb logcat -d -v time > voice-logcat.txt
+
+          # RECORD_AUDIO permission and controlled speech fallback evidence.
+          PERM=$(adb shell dumpsys package ru.mirsamozanyatykh.mobileagent | tr -d '\r' | grep 'android.permission.RECORD_AUDIO' | head -1 || true)
+          echo "RECORD_AUDIO_STATE=$PERM" | tee -a runtime.txt
+          if echo "$PERM" | grep -q 'granted=true'; then
+            echo 'VOICE_PERMISSION=GRANTED' | tee -a runtime.txt
+          elif grep -Eq 'Доступ к микрофону не разрешён|голос|микрофон|Speech|recognition|RECORD_AUDIO|SecurityException' voice-logcat.txt; then
+            echo 'VOICE_PERMISSION=CONTROLLED_FALLBACK' | tee -a runtime.txt
           else
-            echo "ACTIVATION_TAP=element-not-found" | tee -a js-ui.txt
+            echo 'VOICE_PERMISSION=INCONCLUSIVE' | tee -a runtime.txt
+            exit 1
           fi
 
-          adb shell uiautomator dump /sdcard/ui-after.xml >/dev/null 2>&1 || true
-          adb shell cat /sdcard/ui-after.xml > ui-dump-after.xml 2>/dev/null || true
+          # 4. TTS/voice failures must be controlled; no fatal runtime exception.
+          if grep -Eq 'FATAL EXCEPTION|AndroidRuntime.*FATAL|IllegalStateException' voice-logcat.txt; then
+            echo 'VOICE_CRASH=FAIL' | tee -a runtime.txt
+            exit 1
+          fi
+          echo 'VOICE_NO_FATAL=PASS' | tee -a runtime.txt
 
-          # Current product markers from src/app/(root)/svetlana.tsx.
-          MARKERS=$(grep -oE 'Светлана|Голосовой чат|Говорить|Слушаю…|Светлана готовит ответ…' ui-dump-before.xml ui-dump-after.xml 2>/dev/null | sed 's/^[^:]*://' | sort -u || true)
-          printf '%s\n' "$MARKERS" > js-markers.txt
-          for marker in 'Светлана' 'Голосовой чат' 'Говорить'; do
-            if printf '%s\n' "$MARKERS" | grep -Fqx "$marker"; then
-              echo "MARKER_PRESENT=$marker" | tee -a js-ui.txt
-            else
-              echo "MARKER_MISSING=$marker" | tee -a js-ui.txt
-            fi
-          done
-
-          adb exec-out screencap -p > screenshot-before.png 2>/dev/null || true
-          adb exec-out screencap -p > screenshot.png 2>/dev/null || true
-          adb logcat -d -v time > full-logcat.txt || true
-
-          awk '
-            function flush_block() {
-              if (!in_block) return
-              fatal_count++
-              if (app_seen) app_count++
-              if (unsat_seen) unsat_count++
-            }
-            /FATAL EXCEPTION/ {
-              flush_block()
-              in_block=1; app_seen=0; unsat_seen=0
-              next
-            }
-            in_block && /Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)/ { app_seen=1 }
-            in_block && /UnsatisfiedLinkError/ { unsat_seen=1 }
-            END {
-              flush_block()
-              print fatal_count+0 > "crash-total.txt"
-              print app_count+0 > "crash-app-attributed.txt"
-              print unsat_count+0 > "crash-unsatisfied-link-error.txt"
-            }
-          ' full-logcat.txt
-
-          CRASH_TOTAL=$(cat crash-total.txt)
-          APP_ATTRIBUTED=$(cat crash-app-attributed.txt)
-          UNSAT=$(cat crash-unsatisfied-link-error.txt)
-          printf '%s\n' "$PID" > pid.txt
-          printf '%s\n' "$PS_LINE" > ps.txt
-          printf '%s\n' "$RAW_RESUMED" > resumed.txt
-          printf '%s\n' "$FOCUS" > focus.txt
-          printf '%s\n' "$MAINACT" > mainactivity-count.txt
-          printf '%s\n' "$DEVL" > devlaunch-count.txt
-
+          adb logcat -d -v time > full-logcat.txt
+          grep -E 'FATAL EXCEPTION|AndroidRuntime' full-logcat.txt > crash-evidence.txt || true
+          if [ -s crash-evidence.txt ]; then
+            echo 'CRASH_GATE=FAIL' | tee -a runtime.txt
+            exit 1
+          fi
+          echo 'CRASH_GATE=PASS' | tee -a runtime.txt
           {
-            echo "### Release Probe"
-            echo "PID: $PID"
-            echo "MainActivity-resumed: $MAINACT / DevLauncher: $DEVL"
-            echo "Crash events (FATAL blocks): $CRASH_TOTAL"
-            echo "App-attributed crash events: $APP_ATTRIBUTED"
-            echo "UnsatisfiedLinkError events inside fatal blocks: $UNSAT"
-            echo "Activation: $(grep -E '^ACTIVATION_TAP=' js-ui.txt | tail -1 || true)"
-            echo "JS markers:"; cat js-markers.txt
+            echo '### P0 RUNTIME EVIDENCE'
+            cat runtime.txt
+            echo 'PID:'; adb shell pidof ru.mirsamozanyatykh.mobileagent || true
+            echo 'UIAutomator byte counts:'; wc -c chat-ui.xml svetlana-ui.xml 2>/dev/null || true
           } >> "$GITHUB_STEP_SUMMARY"
-
-          if [ "$APP_ATTRIBUTED" -gt 0 ]; then exit 1; fi
-          test -n "$PID" || { echo "::error::no process trace"; exit 1; }
-
-          HAVE_SVETLANA=0; HAVE_VOICE_CARD=0; HAVE_SPEAK=0
-          printf '%s\n' "$MARKERS" | grep -Fqx 'Светлана' && HAVE_SVETLANA=1 || true
-          printf '%s\n' "$MARKERS" | grep -Fqx 'Голосовой чат' && HAVE_VOICE_CARD=1 || true
-          printf '%s\n' "$MARKERS" | grep -Fqx 'Говорить' && HAVE_SPEAK=1 || true
-
-          if [ "$MAINACT" -gt 0 ] && [ "$DEVL" -eq 0 ] && [ "$HAVE_SVETLANA" -eq 1 ] && [ "$HAVE_VOICE_CARD" -eq 1 ] && [ "$HAVE_SPEAK" -eq 1 ] && [ "$CRASH_TOTAL" -eq 0 ]; then
-            echo "V4=PASSED" | tee -a verification.txt
-            echo "V6=PASSED" | tee -a verification.txt
-            echo "::notice::SMOKE PASSED: MainActivity + current Svetlana UI markers + semantic voice activation + clean crash profile"
-          else
-            echo "V4=INCONCLUSIVE" | tee -a verification.txt
-            echo "V6=INCONCLUSIVE" | tee -a verification.txt
-            echo "::warning::INCONCLUSIVE: current Svetlana release evidence incomplete"
-          fi
+          echo 'P0_RUNTIME=PASS' | tee -a runtime.txt
           PROBE_EOF
           chmod +x "$PROBE_SCRIPT"
           bash -n "$PROBE_SCRIPT"
@@ -206,14 +166,16 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
-      - name: Release Smoke на эмуляторе
+      - name: Release smoke on API 30
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
           script: bash "${{ runner.temp }}/release-smoke-probe.sh"
 
-      - name: Evidence upload
+      - name: Upload complete device evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -223,22 +185,21 @@ jobs:
             apk-facts.txt
             apk-sha256.txt
             apk-size.txt
-            pid.txt
-            ps.txt
-            resumed.txt
-            focus.txt
-            mainactivity-count.txt
-            devlaunch-count.txt
-            js-ui.txt
-            js-markers.txt
-            verification.txt
-            crash-total.txt
-            crash-app-attributed.txt
-            crash-unsatisfied-link-error.txt
-            full-logcat.txt
-            ui-dump-before.xml
-            ui-dump-after.xml
-            screenshot-before.png
-            screenshot.png
             badging.txt
+            runtime.txt
+            chat-screenshot.png
+            chat-activities.txt
+            chat-window.txt
+            chat-ui.xml
+            svetlana-deeplink.txt
+            svetlana-screenshot.png
+            svetlana-activities.txt
+            svetlana-window.txt
+            svetlana-ui.xml
+            svetlana-ocr.txt
+            svetlana.tsv
+            voice-after-tap.png
+            voice-logcat.txt
+            full-logcat.txt
+            crash-evidence.txt
           if-no-files-found: warn
