@@ -87,8 +87,10 @@ jobs:
           adb shell uiautomator dump /sdcard/chat-ui.xml >/dev/null 2>&1 || true
           adb shell cat /sdcard/chat-ui.xml > chat-ui.xml 2>/dev/null || true
 
-          # 2. Navigate explicitly to the separate /svetlana route.
-          adb shell am start -W -a android.intent.action.VIEW -d 'mobile-agent://svetlana' -p ru.mirsamozanyatykh.mobileagent | tee svetlana-deeplink.txt
+          # 2. Expo Router path deep link: triple slash means an empty URI host
+          # and /svetlana as the path. The previous //svetlana form encoded the
+          # route as a URI host and could therefore return to the default /chat.
+          adb shell am start -W -a android.intent.action.VIEW -d 'mobile-agent:///svetlana' -p ru.mirsamozanyatykh.mobileagent | tee svetlana-deeplink.txt
           sleep 5
           adb exec-out screencap -p > svetlana-screenshot.png
           adb shell dumpsys activity activities | tr -d '\r' > svetlana-activities.txt
@@ -96,7 +98,6 @@ jobs:
           adb shell uiautomator dump /sdcard/svetlana-ui.xml >/dev/null 2>&1 || true
           adb shell cat /sdcard/svetlana-ui.xml > svetlana-ui.xml 2>/dev/null || true
 
-          # OCR is the temporary evidence fallback for UIAutomator=0 bytes.
           if ! command -v tesseract >/dev/null 2>&1; then
             sudo apt-get update -qq
             sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-rus
@@ -108,8 +109,6 @@ jobs:
           echo "SVETLANA_ROUTE=PASS" | tee -a runtime.txt
           echo "SVETLANA_MARKERS=PASS" | tee -a runtime.txt
 
-          # 3. Activate the live voice control using accessibility bounds first,
-          # then OCR TSV coordinates when UIAutomator is empty.
           B=$(sed -n 's/.*text="Говорить"[^>]*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' svetlana-ui.xml | head -1)
           if [ -z "$B" ]; then
             tesseract svetlana-screenshot.png stdout -l rus --psm 6 tsv 2>/dev/null > svetlana.tsv || true
@@ -124,7 +123,6 @@ jobs:
           adb exec-out screencap -p > voice-after-tap.png
           adb logcat -d -v time > voice-logcat.txt
 
-          # RECORD_AUDIO permission and controlled speech fallback evidence.
           PERM=$(adb shell dumpsys package ru.mirsamozanyatykh.mobileagent | tr -d '\r' | grep 'android.permission.RECORD_AUDIO' | head -1 || true)
           echo "RECORD_AUDIO_STATE=$PERM" | tee -a runtime.txt
           if echo "$PERM" | grep -q 'granted=true'; then
@@ -136,7 +134,6 @@ jobs:
             exit 1
           fi
 
-          # 4. TTS/voice failures must be controlled; no fatal runtime exception.
           if grep -Eq 'FATAL EXCEPTION|AndroidRuntime.*FATAL|IllegalStateException' voice-logcat.txt; then
             echo 'VOICE_CRASH=FAIL' | tee -a runtime.txt
             exit 1
