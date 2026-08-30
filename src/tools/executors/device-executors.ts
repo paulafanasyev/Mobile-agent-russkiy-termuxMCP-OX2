@@ -85,6 +85,17 @@ export async function executeOpenApp(
     return { status: 'launch_failed', packageName: args.packageName, verified: false };
   }
 
+  // If the target was already foreground before the intent, there is no
+  // observable transition attributable to this command. Do not poll for 2.5s
+  // and do not claim verification; the initial observation is sufficient.
+  if (previousPackage === args.packageName) {
+    return {
+      status: 'launched_unverified',
+      packageName: args.packageName,
+      verified: false,
+    };
+  }
+
   const verified = await waitForForegroundPackage(args.packageName, previousPackage);
   return {
     status: verified ? 'launched_verified' : 'launched_unverified',
