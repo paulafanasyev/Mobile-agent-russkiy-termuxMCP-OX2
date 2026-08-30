@@ -76,7 +76,6 @@ jobs:
           adb logcat -c
           echo "INSTALL=PASS" | tee runtime.txt
 
-          # 1. Default product contract: /chat.
           adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1
           sleep 12
           adb exec-out screencap -p > chat-screenshot.png
@@ -87,9 +86,6 @@ jobs:
           adb shell uiautomator dump /sdcard/chat-ui.xml >/dev/null 2>&1 || true
           adb shell cat /sdcard/chat-ui.xml > chat-ui.xml 2>/dev/null || true
 
-          # 2. Expo Router path deep link: triple slash means an empty URI host
-          # and /svetlana as the path. The previous //svetlana form encoded the
-          # route as a URI host and could therefore return to the default /chat.
           adb shell am start -W -a android.intent.action.VIEW -d 'mobile-agent:///svetlana' -p ru.mirsamozanyatykh.mobileagent | tee svetlana-deeplink.txt
           sleep 5
           adb exec-out screencap -p > svetlana-screenshot.png
@@ -140,13 +136,34 @@ jobs:
           fi
           echo 'VOICE_NO_FATAL=PASS' | tee -a runtime.txt
 
+          # Crash gate is application-attributed, not a global emulator-noise grep.
+          # Parse FATAL EXCEPTION blocks and fail only when the crashing process is OX2.
           adb logcat -d -v time > full-logcat.txt
-          grep -E 'FATAL EXCEPTION|AndroidRuntime' full-logcat.txt > crash-evidence.txt || true
-          if [ -s crash-evidence.txt ]; then
+          awk '
+            function flush_block(){
+              if(!in_block)return;
+              fatal_count++;
+              if(app_seen) app_count++;
+            }
+            /FATAL EXCEPTION/{flush_block();in_block=1;app_seen=0;next}
+            in_block && /Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)/{app_seen=1}
+            END{
+              flush_block();
+              print fatal_count+0 > "crash-total.txt";
+              print app_count+0 > "crash-app-attributed.txt";
+            }
+          ' full-logcat.txt
+          CRASH_TOTAL=$(cat crash-total.txt)
+          APP_ATTRIBUTED=$(cat crash-app-attributed.txt)
+          if [ "$APP_ATTRIBUTED" -gt 0 ]; then
             echo 'CRASH_GATE=FAIL' | tee -a runtime.txt
+            grep -n -B2 -A12 'Process: ru\.mirsamozanyatykh\.mobileagent' full-logcat.txt > crash-evidence.txt || true
             exit 1
           fi
           echo 'CRASH_GATE=PASS' | tee -a runtime.txt
+          echo "CRASH_TOTAL_EMULATOR=$CRASH_TOTAL" | tee -a runtime.txt
+          grep -E 'FATAL EXCEPTION|AndroidRuntime' full-logcat.txt > crash-evidence.txt || true
+
           {
             echo '### P0 RUNTIME EVIDENCE'
             cat runtime.txt
@@ -199,4 +216,6 @@ jobs:
             voice-logcat.txt
             full-logcat.txt
             crash-evidence.txt
+            crash-total.txt
+            crash-app-attributed.txt
           if-no-files-found: warn
