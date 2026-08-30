@@ -38,10 +38,18 @@ export default function HandsSmokeScreen() {
           throw new Error("Accessibility Hands tools are not executable");
         }
 
-        const observed = await observe.execute(
-          { maxNodes: 200 },
-          { toolCallId: "hands-observe", messages: [], context: {} },
-        );
+        // AccessibilityService binding is asynchronous even after Android reports
+        // the service enabled. Retry the real observation instead of converting a
+        // transient binding race into a false Hands failure.
+        let observed: any = null;
+        for (let attempt = 1; attempt <= 30; attempt += 1) {
+          observed = await observe.execute(
+            { maxNodes: 200 },
+            { toolCallId: `hands-observe-${attempt}`, messages: [], context: {} },
+          );
+          if (observed?.status === "observed") break;
+          if (attempt < 30) await new Promise((resolve) => setTimeout(resolve, 500));
+        }
         log(`HANDS_UI_OBSERVE_RESULT status=${String(observed?.status)} nodes=${String(observed?.nodes?.length ?? 0)}`);
         const isTarget = (n: any) =>
           n.clickable && (n.text === "HANDS_REAL_ACTION_TARGET" || n.contentDescription === "HANDS_REAL_ACTION_TARGET");
