@@ -29,6 +29,11 @@ class VoiceModule : Module() {
   private var synthesizer: SpeechSynthesizer? = null
   private var offlineTts: TextToSpeech? = null
 
+  private fun ttsEngineAvailable(context: android.content.Context): Boolean {
+    val intent = Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE)
+    return context.packageManager.queryIntentServices(intent, PackageManager.MATCH_ALL).isNotEmpty()
+  }
+
   override fun definition() = ModuleDefinition {
     Name("SvetlanaVoice")
     Events("onVisemeReceived", "onSpeechCompleted", "onSpeechError")
@@ -38,7 +43,7 @@ class VoiceModule : Module() {
       mapOf(
         "supported" to SpeechRecognizer.isRecognitionAvailable(context),
         "offlinePreferred" to true,
-        "ttsAvailable" to true,
+        "ttsAvailable" to ttsEngineAvailable(context),
         "azureVisemeAvailable" to true,
         "language" to "ru-RU",
         "sdk" to "azure-speech-1.51.0",
@@ -49,9 +54,13 @@ class VoiceModule : Module() {
       val context = appContext.reactContext
         ?: throw IllegalStateException("Android context unavailable")
       if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-        throw SecurityException("Microphone permission is required")
+        val activity = appContext.currentActivity
+        activity?.requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 4107)
+        sendEvent("onSpeechError", mapOf("message" to "Для голосового ввода разрешите доступ к микрофону."))
+        throw SecurityException("Microphone permission is required. Permission request was started.")
       }
       if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+        sendEvent("onSpeechError", mapOf("message" to "На этом устройстве недоступна служба распознавания речи. Используйте ручной ввод."))
         throw IllegalStateException("Speech recognition is not available on this device")
       }
 
@@ -85,6 +94,7 @@ class VoiceModule : Module() {
             recognizer?.startListening(intent)
           } catch (error: IllegalStateException) {
             finish {
+              sendEvent("onSpeechError", mapOf("message" to "Не удалось запустить распознавание речи. Попробуйте ещё раз."))
               continuation.resumeWithException(IllegalStateException("Speech recognition could not start: ${error.message ?: "recognizer busy"}"))
             }
           }
@@ -102,8 +112,10 @@ class VoiceModule : Module() {
           override fun onResults(results: android.os.Bundle?) {
             val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
             finish {
-              if (text.isBlank()) continuation.resumeWithException(IllegalStateException("Speech recognition returned no text"))
-              else continuation.resume(text)
+              if (text.isBlank()) {
+                sendEvent("onSpeechError", mapOf("message" to "Речь не распознана. Попробуйте ещё раз или используйте ручной ввод."))
+                continuation.resumeWithException(IllegalStateException("Speech recognition returned no text"))
+              } else continuation.resume(text)
             }
           }
 
@@ -117,9 +129,11 @@ class VoiceModule : Module() {
                 handler.postDelayed({ startRecognition() }, 500)
               }
               error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> finish {
-                continuation.resumeWithException(SecurityException("Android speech recognizer reports missing RECORD_AUDIO permission (code 9). Re-grant microphone permission for this app."))
+                sendEvent("onSpeechError", mapOf("message" to "Нет разрешения на микрофон. Разрешите доступ к микрофону в настройках приложения."))
+                continuation.resumeWithException(SecurityException("Android speech recognizer reports missing RECORD_AUDIO permission (code 9)."))
               }
               else -> finish {
+                sendEvent("onSpeechError", mapOf("message" to "Распознавание речи недоступно (код $error). Используйте ручной ввод или проверьте службу распознавания речи."))
                 continuation.resumeWithException(IllegalStateException("Speech recognition failed (code $error)"))
               }
             }
@@ -134,7 +148,6 @@ class VoiceModule : Module() {
           }
         }
 
-        // SpeechRecognizer must be created/started on the main looper.
         handler.post { startRecognition() }
       }
     }
@@ -170,6 +183,7 @@ class VoiceModule : Module() {
           throw IllegalStateException("Azure synthesis failed: ${cancellation.reason} — ${cancellation.errorDetails}")
         }
       } catch (e: Exception) {
+        sendEvent("onSpeechError", mapOf("message" to "Онлайн-озвучка недоступна: ${e.message ?: "неизвестная ошибка"}"))
         throw IllegalStateException("Azure synthesis error: ${e.message}")
       } finally {
         this@VoiceModule.synthesizer?.close()
@@ -180,6 +194,11 @@ class VoiceModule : Module() {
     AsyncFunction("speakOffline") Coroutine { text: String ->
       require(text.isNotBlank()) { "Speech text must not be blank" }
       val context = appContext.reactContext ?: throw IllegalStateException("Android context unavailable")
+      if (!ttsEngineAvailable(context)) {
+        sendEvent("onSpeechError", mapOf("message" to "На устройстве не установлен или не включён движок Text-to-Speech. Ответ оставлен текстом. Установите/включите Google Speech Services или другой TTS-движок."))
+        return@Coroutine false
+      }
+
       suspendCancellableCoroutine { continuation ->
         val handler = Handler(Looper.getMainLooper())
         val utteranceId = "svetlana-offline-${System.nanoTime()}"
@@ -199,13 +218,15 @@ class VoiceModule : Module() {
               handler.post {
                 if (!continuation.isActive || completed) return@post
                 if (status != TextToSpeech.SUCCESS) {
-                  finish { continuation.resumeWithException(IllegalStateException("Android offline TTS initialization failed (status $status). Check that a TTS engine is installed and enabled.")) }
+                  sendEvent("onSpeechError", mapOf("message" to "Android TTS не инициализировался. Ответ оставлен текстом. Проверьте установленный TTS-движок."))
+                  finish { continuation.resume(false) }
                   return@post
                 }
                 val engine = tts ?: return@post
                 val localeResult = engine.setLanguage(Locale("ru", "RU"))
                 if (localeResult == TextToSpeech.LANG_MISSING_DATA || localeResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                  finish { continuation.resumeWithException(IllegalStateException("Русский голосовой пакет Android TTS недоступен. Установите русский голосовой пакет в настройках Text-to-Speech.")) }
+                  sendEvent("onSpeechError", mapOf("message" to "Русский голосовой пакет Android TTS недоступен. Ответ оставлен текстом. Установите русский голосовой пакет в настройках Text-to-Speech."))
+                  finish { continuation.resume(false) }
                   return@post
                 }
                 engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -214,19 +235,24 @@ class VoiceModule : Module() {
                     if (id == utteranceId) handler.post { finish { continuation.resume(true) } }
                   }
                   override fun onError(id: String?) {
-                    if (id == utteranceId) handler.post { finish { continuation.resumeWithException(IllegalStateException("Android offline TTS failed")) } }
+                    if (id == utteranceId) handler.post {
+                      sendEvent("onSpeechError", mapOf("message" to "Android TTS не смог озвучить ответ. Ответ оставлен текстом."))
+                      finish { continuation.resume(false) }
+                    }
                   }
                 })
                 val result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
                 if (result != TextToSpeech.SUCCESS) {
-                  finish { continuation.resumeWithException(IllegalStateException("Android offline TTS rejected speech")) }
+                  sendEvent("onSpeechError", mapOf("message" to "Android TTS отклонил озвучивание. Ответ оставлен текстом."))
+                  finish { continuation.resume(false) }
                 }
               }
             }
             offlineTts?.shutdown()
             offlineTts = tts
           } catch (error: Exception) {
-            finish { continuation.resumeWithException(IllegalStateException("Android offline TTS initialization failed: ${error.message}")) }
+            sendEvent("onSpeechError", mapOf("message" to "Не удалось запустить Android TTS. Ответ оставлен текстом."))
+            finish { continuation.resume(false) }
           }
         }
 
@@ -238,7 +264,6 @@ class VoiceModule : Module() {
           }
         }
       }
-      true
     }
 
     AsyncFunction("stopSpeaking") Coroutine { ->
