@@ -38,13 +38,8 @@ jobs:
           SOURCE_SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.head_sha')
           CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')
           test "$CONCLUSION" = success
-          gh api "repos/$GITHUB_REPOSITORY/contents/src/app/(root)/hands-smoke.tsx?ref=$SOURCE_SHA" \
-            --jq '.content' | base64 -d | grep -q 'PASS:REAL_ACCESSIBILITY_TAP_VERIFIED'
-          {
-            echo "source_run_id=$RUN_ID"
-            echo "source_sha=$SOURCE_SHA"
-            echo "source_conclusion=$CONCLUSION"
-          } | tee hands-provenance.txt
+          gh api "repos/$GITHUB_REPOSITORY/contents/src/app/(root)/hands-smoke.tsx?ref=$SOURCE_SHA" --jq '.content' | base64 -d | grep -q 'PASS:REAL_ACCESSIBILITY_TAP_VERIFIED'
+          { echo "source_run_id=$RUN_ID"; echo "source_sha=$SOURCE_SHA"; echo "source_conclusion=$CONCLUSION"; } | tee hands-provenance.txt
 
       - name: Download release APK
         env:
@@ -53,13 +48,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/apk"
-          ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
-            --jq '.artifacts[] | select(.name=="mobile-agent-russkiy-release-apk" and .expired==false) | .id' | head -1)
+          ART_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="mobile-agent-russkiy-release-apk" and .expired==false) | .id' | head -1)
           test -n "$ART_ID"
-          curl --fail --silent --show-error --location \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -o "$RUNNER_TEMP/apk/artifact.zip" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
+          curl --fail --silent --show-error --location -H "Authorization: Bearer $GH_TOKEN" -o "$RUNNER_TEMP/apk/artifact.zip" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
           unzip -o "$RUNNER_TEMP/apk/artifact.zip" -d "$RUNNER_TEMP/apk/unpacked"
           APK=$(find "$RUNNER_TEMP/apk/unpacked" -type f -name '*.apk' | head -1)
           test -s "$APK"
@@ -98,22 +89,13 @@ jobs:
         if: always()
         run: |
           set +e
-          echo "=== probe step outcome ==="
-          echo "${{ steps.hands_probe.outcome }}"
-          echo "=== workspace evidence ==="
+          echo "probe_outcome=${{ steps.hands_probe.outcome }}"
           pwd
           ls -la
           for f in hands-logcat.txt hands-fatal.txt hands-runtime.txt hands-launch.txt hands-top.txt hands-target-pid.txt hands-activities-before.txt hands-window-before.txt hands-activities-after.txt hands-window-after.txt hands-ui-before.xml hands-ui-after.xml hands-before.png hands-after.png; do
-            if [ -e "$f" ]; then
-              echo "EVIDENCE_PRESENT=$f size=$(wc -c < "$f")"
-            else
-              echo "EVIDENCE_MISSING=$f"
-            fi
+            if [ -e "$f" ]; then echo "EVIDENCE_PRESENT=$f size=$(wc -c < "$f")"; else echo "EVIDENCE_MISSING=$f"; fi
           done
-          if [ -f hands-logcat.txt ]; then
-            echo "=== HANDS MARKERS ==="
-            grep -E 'HANDS_|PASS:' hands-logcat.txt || true
-          fi
+          if [ -f hands-logcat.txt ]; then grep -E 'HANDS_|PASS:' hands-logcat.txt || true; fi
 
       - name: Upload Hands evidence
         if: always()
@@ -141,5 +123,4 @@ jobs:
 
       - name: Enforce Hands probe result
         if: always()
-        run: |
-          test "${{ steps.hands_probe.outcome }}" = success
+        run: test "${{ steps.hands_probe.outcome }}" = success
