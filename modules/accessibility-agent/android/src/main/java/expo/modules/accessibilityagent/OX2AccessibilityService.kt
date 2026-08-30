@@ -7,6 +7,7 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 
 class OX2AccessibilityService : AccessibilityService() {
   override fun onServiceConnected() {
@@ -25,7 +26,7 @@ class OX2AccessibilityService : AccessibilityService() {
 
   fun snapshot(maxNodes: Int): List<Map<String, Any?>> {
     val limit = maxNodes.coerceIn(1, MAX_TREE_NODES)
-    val root = rootInActiveWindow ?: return emptyList()
+    val root = targetRoot() ?: return emptyList()
     return try {
       val out = ArrayList<Map<String, Any?>>(limit)
       walk(root, "0", limit, out)
@@ -33,6 +34,26 @@ class OX2AccessibilityService : AccessibilityService() {
     } finally {
       root.recycle()
     }
+  }
+
+  /**
+   * Tool-approval UI is rendered by this app in a separate Android Modal window.
+   * rootInActiveWindow therefore points at the approval overlay instead of the
+   * application the agent is trying to control. Prefer an interactive application
+   * window owned by another package, and fall back to the active window when the
+   * user is intentionally observing this app's own UI.
+   */
+  private fun targetRoot(): AccessibilityNodeInfo? {
+    val ownPackage = packageName
+    val applicationWindow = windows
+      .asSequence()
+      .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+      .filter { it.root != null }
+      .filter { it.root?.packageName?.toString() != ownPackage }
+      .sortedWith(compareByDescending<AccessibilityWindowInfo> { it.isActive }.thenByDescending { it.isFocused })
+      .firstOrNull()
+
+    return applicationWindow?.root ?: rootInActiveWindow
   }
 
   private fun walk(
@@ -100,7 +121,7 @@ class OX2AccessibilityService : AccessibilityService() {
 
   private fun findNode(id: String): AccessibilityNodeInfo? {
     if (!NODE_ID.matches(id) || id == "0") return null
-    val root = rootInActiveWindow ?: return null
+    val root = targetRoot() ?: return null
     val parts = id.split('.')
     var current: AccessibilityNodeInfo = root
     try {
