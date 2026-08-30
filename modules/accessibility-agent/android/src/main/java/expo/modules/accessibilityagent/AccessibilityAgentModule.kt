@@ -1,5 +1,6 @@
 package expo.modules.accessibilityagent
 
+import android.content.Intent
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.json.JSONObject
@@ -15,6 +16,26 @@ class AccessibilityAgentModule : Module() {
     AsyncFunction("getTree") { maxNodes: Int ->
       OX2AccessibilityService.instance?.snapshot(maxNodes.coerceIn(1, HANDS_MAX_TREE_NODES))
         ?: emptyList<Map<String, Any?>>()
+    }
+
+    AsyncFunction("listLaunchableApps") {
+      val context = appContext.reactContext
+        ?: return@AsyncFunction emptyList<Map<String, String>>()
+      val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+      context.packageManager.queryIntentActivities(intent, 0)
+        .asSequence()
+        .mapNotNull { info ->
+          val packageName = info.activityInfo?.packageName?.trim().orEmpty()
+          if (packageName.isBlank()) return@mapNotNull null
+          val label = info.loadLabel(context.packageManager)?.toString()?.trim().orEmpty()
+          mapOf(
+            "name" to if (label.isBlank()) packageName else label,
+            "packageName" to packageName,
+          )
+        }
+        .distinctBy { it["packageName"] }
+        .sortedBy { it["name"]?.lowercase() }
+        .toList()
     }
 
     AsyncFunction("perform") { actionJson: String ->
