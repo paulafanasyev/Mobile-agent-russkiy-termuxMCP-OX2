@@ -2,9 +2,6 @@ import { tool, type ToolSet } from 'ai'
 
 import {
   DEVICE_TOOLS,
-  getSessionApprovedPackages,
-  isAppApprovedForSession,
-  approveAppForSession,
 } from './device-tools'
 import { ACCESSIBILITY_TOOLS, uiActSchema, uiObserveSchema } from './accessibility-tools'
 import {
@@ -38,12 +35,9 @@ export function createDeviceToolSet(): ToolSet {
       inputSchema: getContract('device.open_app').inputSchema,
       execute: async (args) => {
         const parsed = openAppSchema.parse(args)
-        if (!isAppApprovedForSession(parsed.packageName)) {
-          const decision = await requestDeviceToolApproval('device.open_app', parsed)
-          if (decision === 'abort') throw new Error('Request aborted.')
-          if (decision !== 'approve') return { status: 'needs_approval', packageName: parsed.packageName }
-          approveAppForSession(parsed.packageName)
-        }
+        const decision = await requestDeviceToolApproval('device.open_app', parsed)
+        if (decision === 'abort') throw new Error('Request aborted.')
+        if (decision !== 'approve') return { status: 'needs_approval', packageName: parsed.packageName }
         return executeOpenApp(parsed)
       },
     }),
@@ -75,12 +69,4 @@ export function createDeviceToolSet(): ToolSet {
       },
     }),
   }
-}
-
-export function getDeviceSessionApprovals(): string[] {
-  return getSessionApprovedPackages()
-}
-
-export function isDeviceAppApproved(packageName: string): boolean {
-  return isAppApprovedForSession(packageName)
 }
