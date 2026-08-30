@@ -10,7 +10,6 @@ import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import { requireNativeModule } from 'expo';
 import { z } from 'zod';
-import { HANDS_MAX_TREE_NODES } from '../../../modules/accessibility-agent';
 
 export const openAppSchema = z.object({
   packageName: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i),
@@ -104,5 +103,3 @@ export async function executeFileRead(
     truncated,
   };
 }
-
-void HANDS_MAX_TREE_NODES;
