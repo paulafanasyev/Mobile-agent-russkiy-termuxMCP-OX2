@@ -84,6 +84,8 @@ jobs:
           grep -Fq 'com.android.settings' scripts/hands-android-probe.sh
 
       - name: Run real Android Hands probe
+        id: hands_probe
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
@@ -91,6 +93,27 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: bash "$GITHUB_WORKSPACE/scripts/hands-android-probe.sh"
+
+      - name: Collect Hands evidence after probe
+        if: always()
+        run: |
+          set +e
+          echo "=== probe step outcome ==="
+          echo "${{ steps.hands_probe.outcome }}"
+          echo "=== workspace evidence ==="
+          pwd
+          ls -la
+          for f in hands-logcat.txt hands-fatal.txt hands-runtime.txt hands-launch.txt hands-top.txt hands-target-pid.txt hands-activities-before.txt hands-window-before.txt hands-activities-after.txt hands-window-after.txt hands-ui-before.xml hands-ui-after.xml hands-before.png hands-after.png; do
+            if [ -e "$f" ]; then
+              echo "EVIDENCE_PRESENT=$f size=$(wc -c < "$f")"
+            else
+              echo "EVIDENCE_MISSING=$f"
+            fi
+          done
+          if [ -f hands-logcat.txt ]; then
+            echo "=== HANDS MARKERS ==="
+            grep -E 'HANDS_|PASS:' hands-logcat.txt || true
+          fi
 
       - name: Upload Hands evidence
         if: always()
@@ -115,3 +138,8 @@ jobs:
             hands-logcat.txt
             hands-fatal.txt
           if-no-files-found: warn
+
+      - name: Enforce Hands probe result
+        if: always()
+        run: |
+          test "${{ steps.hands_probe.outcome }}" = success
