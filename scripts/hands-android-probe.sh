@@ -1,35 +1,51 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PACKAGE='ru.mirsamozanyatykh.mobileagent'
+SETTINGS='com.android.settings'
+
 adb install -r "$GITHUB_WORKSPACE/hands-smoke.apk"
 echo "INSTALL=PASS" | tee hands-runtime.txt
 
-# Enable the real AccessibilityService; no mock bridge is allowed.
+# Bootstrap runtime permissions so a first-run permission overlay cannot hide
+# the actual Hands execution path in CI.
+adb shell pm grant "$PACKAGE" android.permission.RECORD_AUDIO 2>/dev/null || true
 adb shell settings put secure accessibility_enabled 1
-adb shell settings put secure enabled_accessibility_services 'ru.mirsamozanyatykh.mobileagent/expo.modules.accessibilityagent.OX2AccessibilityService'
+adb shell settings put secure enabled_accessibility_services "$PACKAGE/expo.modules.accessibilityagent.OX2AccessibilityService"
 echo "ACCESSIBILITY_SERVICE_ENABLED=PASS" | tee -a hands-runtime.txt
+echo "RECORD_AUDIO_BOOTSTRAP=PASS" | tee -a hands-runtime.txt
 
 adb shell am start -W \
   -a android.intent.action.VIEW \
   -d 'mobile-agent://hands-smoke' \
-  -p ru.mirsamozanyatykh.mobileagent
+  -p "$PACKAGE"
 echo "OX2_LAUNCH=PASS" | tee -a hands-runtime.txt
-sleep 4
+
+# The route needs time to observe, act, request approval and open Settings.
+# A transient MainActivity/permission-controller state is not itself a failure.
+settings_seen=0
+for _ in $(seq 1 30); do
+  TOP=$(adb shell dumpsys activity activities | tr -d '\r' | grep -E 'mResumedActivity|topResumedActivity' | head -1 || true)
+  echo "$TOP" > hands-top.txt
+  if echo "$TOP" | grep -q "$SETTINGS"; then
+    settings_seen=1
+    break
+  fi
+  sleep 1
+done
 
 adb shell dumpsys activity activities > hands-activities-after.txt
 adb shell dumpsys window > hands-window-after.txt
 adb shell uiautomator dump /sdcard/hands-ui.xml >/dev/null 2>&1 || true
 adb shell cat /sdcard/hands-ui.xml > hands-ui.xml 2>/dev/null || true
 adb logcat -d -v time > hands-logcat.txt
+cat hands-top.txt
 
-TOP=$(adb shell dumpsys activity activities | tr -d '\r' | grep -E 'mResumedActivity|topResumedActivity' | head -1 || true)
-echo "$TOP" | tee hands-top.txt
-
-if echo "$TOP" | grep -q 'com.android.settings'; then
+if [ "$settings_seen" -eq 1 ]; then
   echo 'DEVICE_OPEN_APP=PASS' | tee -a hands-runtime.txt
 else
   echo 'DEVICE_OPEN_APP=FAIL' | tee -a hands-runtime.txt
-  adb shell dumpsys activity activities | tail -120
+  tail -160 hands-activities-after.txt
   exit 1
 fi
 
@@ -48,7 +64,7 @@ echo 'HANDS_RUNTIME=PASS' | tee -a hands-runtime.txt
 grep -q 'HANDS_ACTION_EXECUTED' hands-ui.xml
 echo 'HANDS_UI=PASS' | tee -a hands-runtime.txt
 
-adb shell pidof com.android.settings | tee hands-target-pid.txt
+adb shell pidof "$SETTINGS" | tee hands-target-pid.txt
 grep -E 'FATAL EXCEPTION|AndroidRuntime' hands-logcat.txt > hands-fatal.txt || true
 test ! -s hands-fatal.txt
 
