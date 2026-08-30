@@ -29,7 +29,7 @@ jobs:
           INPUT_RUN_ID: ${{ github.event.inputs.android_run_id }}
           EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          set -euo pipefail
+          set -eu
           if [ -n "$INPUT_RUN_ID" ]; then RUN_ID="$INPUT_RUN_ID"; elif [ -n "$EVENT_RUN_ID" ]; then RUN_ID="$EVENT_RUN_ID"; else exit 1; fi
           CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')
           test "$CONCLUSION" = success
@@ -41,15 +41,16 @@ jobs:
             -o "$RUNNER_TEMP/apk/artifact.zip" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip"
           unzip -o "$RUNNER_TEMP/apk/artifact.zip" -d "$RUNNER_TEMP/apk/unpacked" >/dev/null
-          mapfile -t APKs < <(find "$RUNNER_TEMP/apk/unpacked" -type f -name '*.apk')
-          test "${#APKs[@]}" -eq 1
-          cp "${APKs[0]}" smoke.apk
+          APK_COUNT=$(find "$RUNNER_TEMP/apk/unpacked" -type f -name '*.apk' | wc -l | tr -d ' ')
+          test "$APK_COUNT" -eq 1
+          APK=$(find "$RUNNER_TEMP/apk/unpacked" -type f -name '*.apk' | head -1)
+          cp "$APK" smoke.apk
           printf 'source_run_id=%s\nsource_sha=%s\n' "$RUN_ID" "$SHA" > provenance.txt
           sha256sum smoke.apk > apk-sha256.txt
 
       - name: M1 manifest
         run: |
-          set -euo pipefail
+          set -eu
           BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
           "$BT/aapt2" dump badging smoke.apk | tee badging.txt
           grep -q "package: name='ru.mirsamozanyatykh.mobileagent'" badging.txt
@@ -68,17 +69,18 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
-            set -euo pipefail
+            set -eu
             adb install -r smoke.apk
             adb logcat -c
             adb shell am force-stop ru.mirsamozanyatykh.mobileagent || true
             adb shell am start -W -n ru.mirsamozanyatykh.mobileagent/.MainActivity
+            PID=''
             for _ in $(seq 1 30); do
               PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
-              [ -n "$PID" ] && break
+              if [ -n "$PID" ]; then break; fi
               sleep 2
             done
-            test -n "${PID:-}"
+            test -n "$PID"
             adb exec-out screencap -p > screenshot.png
             adb shell dumpsys activity activities | tr -d '\r' > resumed.txt
             adb shell dumpsys window | tr -d '\r' > focus.txt
