@@ -73,11 +73,15 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Validate Hands probe syntax
+      - name: Validate Hands probe syntax and evidence contract
         run: |
           set -euo pipefail
           bash -n scripts/hands-android-probe.sh
           test -x scripts/hands-android-probe.sh || chmod +x scripts/hands-android-probe.sh
+          grep -Fq 'pm grant "$PKG" android.permission.RECORD_AUDIO' scripts/hands-android-probe.sh
+          grep -Fq 'mResumedActivity|topResumedActivity' scripts/hands-android-probe.sh
+          grep -Fq 'PASS:REAL_ACCESSIBILITY_TAP_VERIFIED' scripts/hands-android-probe.sh
+          grep -Fq 'com.android.settings' scripts/hands-android-probe.sh
 
       - name: Run real Android Hands probe
         uses: reactivecircus/android-emulator-runner@v2
@@ -97,11 +101,17 @@ jobs:
             hands-provenance.txt
             hands-apk-sha256.txt
             hands-runtime.txt
+            hands-launch.txt
             hands-top.txt
             hands-target-pid.txt
+            hands-activities-before.txt
+            hands-window-before.txt
             hands-activities-after.txt
             hands-window-after.txt
-            hands-ui.xml
+            hands-ui-before.xml
+            hands-ui-after.xml
+            hands-before.png
+            hands-after.png
             hands-logcat.txt
             hands-fatal.txt
           if-no-files-found: warn
