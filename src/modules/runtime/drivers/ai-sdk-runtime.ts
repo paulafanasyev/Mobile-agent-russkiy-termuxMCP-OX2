@@ -156,7 +156,14 @@ async function generateViaAISDKWithContinuation(
     const toolResultsPromise = Promise.resolve(result.toolResults);
     const usagePromise = Promise.resolve(result.usage);
     const stepsPromise = Promise.resolve(result.steps);
-    const resultPromises = [textPromise, filesPromise, responseMessagesPromise, toolResultsPromise, usagePromise, stepsPromise];
+    const resultPromises = [
+      textPromise,
+      filesPromise,
+      responseMessagesPromise,
+      toolResultsPromise,
+      usagePromise,
+      stepsPromise,
+    ] as const;
     for (const promise of resultPromises) void promise.catch(() => {});
 
     try {
