@@ -1,4 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const alwaysAllowed = new Set<string>();
+
+vi.mock("@/core/services/tool-approval-store", () => ({
+  isToolAlwaysAllowed: vi.fn(async (toolName: string) => alwaysAllowed.has(toolName)),
+  setToolAlwaysAllowed: vi.fn(async (toolName: string, allowed: boolean) => {
+    if (allowed) alwaysAllowed.add(toolName);
+    else alwaysAllowed.delete(toolName);
+  }),
+}));
 
 import {
   requestDeviceToolApproval,
@@ -9,9 +19,12 @@ import { tool } from "ai";
 import { z } from "zod";
 
 describe("device tool approval bridge", () => {
-  it("returns null when no runtime approval bridge is installed", async () => {
+  beforeEach(() => {
+    alwaysAllowed.clear();
     setDeviceToolApprovalHandler(null);
+  });
 
+  it("returns null when no runtime approval bridge is installed", async () => {
     await expect(
       requestDeviceToolApproval("device.open_app", {
         packageName: "com.example.app",
@@ -51,10 +64,6 @@ describe("device tool approval bridge", () => {
   });
 
   it("does not require a second UI approval in auto mode", async () => {
-    const requestApproval = async () => {
-      throw new Error("should not be called in auto mode");
-    };
-
     wrapToolsWithApproval(
       {
         example: tool({
@@ -65,7 +74,9 @@ describe("device tool approval bridge", () => {
       },
       {
         mode: "auto",
-        requestApproval,
+        requestApproval: async () => {
+          throw new Error("should not be called in auto mode");
+        },
       },
     );
 

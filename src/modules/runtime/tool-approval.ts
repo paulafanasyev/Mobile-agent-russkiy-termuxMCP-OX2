@@ -1,6 +1,7 @@
 import type { ToolSet } from "ai";
 
 import { createRecord, summarizeValue } from "@/modules/tools/built-in/shared";
+import { isToolAlwaysAllowed, setToolAlwaysAllowed } from "@/core/services/tool-approval-store";
 import type {
   PendingToolApprovalRequest,
   ToolApprovalMode,
@@ -17,6 +18,14 @@ type DeviceToolApprovalHandler = (
 ) => Promise<ToolApprovalDecision>;
 
 let deviceToolApprovalHandler: DeviceToolApprovalHandler | null = null;
+
+export async function rememberToolApproval(toolName: string): Promise<void> {
+  await setToolAlwaysAllowed(toolName, true);
+}
+
+export async function forgetToolApproval(toolName: string): Promise<void> {
+  await setToolAlwaysAllowed(toolName, false);
+}
 
 /**
  * Device tools are injected by the AI SDK runtime after the normal runtime
@@ -67,6 +76,10 @@ export function wrapToolsWithApproval<T extends ToolSet>(
       return "approve";
     }
 
+    if (await isToolAlwaysAllowed(toolName)) {
+      return "approve";
+    }
+
     return input.requestApproval({
       id: createApprovalId(toolName),
       inputSummary,
@@ -97,6 +110,10 @@ export function wrapToolsWithApproval<T extends ToolSet>(
               input.shouldRequireApproval?.(toolName, toolInput) ?? true;
 
             if (input.mode === "ask" && needsApproval) {
+              if (await isToolAlwaysAllowed(toolName)) {
+                return execute(toolInput, options);
+              }
+
               const decision = await input.requestApproval({
                 id: createApprovalId(toolName),
                 inputSummary,

@@ -13,12 +13,12 @@ const readFileArgs = z.object({
   uri: z.string().startsWith('content://'),
 });
 
-// ── Contracts (spec-only, matching the existing P0 ToolContractSpec) ────────
+// ── Contracts ────────────────────────────────────────────────────────────────
 export const DEVICE_TOOLS: ToolContractSpec<unknown, unknown>[] = [
   {
     id: 'device.apps.list',
-    version: '1.0.0',
-    description: 'Показывает установленные приложения с launcher-иконками',
+    version: '1.1.0',
+    description: 'Показывает приложения с launcher-иконками, доступные на устройстве.',
     inputSchema: listAppsArgs,
     outputSchema: z.any(),
     requiredCapability: 'NO_PRIVILEGE',
@@ -30,13 +30,13 @@ export const DEVICE_TOOLS: ToolContractSpec<unknown, unknown>[] = [
   },
   {
     id: 'device.open_app',
-    version: '1.0.0',
-    description: 'Открывает приложение по packageName (только из разрешённого списка)',
+    version: '1.1.0',
+    description: 'Открывает установленное launcher-приложение по packageName.',
     inputSchema: openAppArgs,
     outputSchema: z.any(),
     requiredCapability: 'NO_PRIVILEGE',
-    risk: 'low',
-    requiresConfirmation: false,
+    risk: 'medium',
+    requiresConfirmation: true,
     auditPolicy: 'always',
     timeoutMs: 5000,
     availability: async () => true,
@@ -59,24 +59,4 @@ export const DEVICE_TOOLS: ToolContractSpec<unknown, unknown>[] = [
 // ── Registration ─────────────────────────────────────────────────────────────
 export function registerDeviceTools(): void {
   DEVICE_TOOLS.forEach(register);
-}
-
-// ── Session-level permission for open_app ────────────────────────────────────
-// Discovery is not authorization: approval must be explicit and session-scoped.
-const sessionApproved = new Set<string>();
-
-export function approveAppForSession(packageName: string): void {
-  sessionApproved.add(packageName);
-}
-
-export function isAppApprovedForSession(packageName: string): boolean {
-  return sessionApproved.has(packageName);
-}
-
-export function getSessionApprovedPackages(): string[] {
-  return [...sessionApproved];
-}
-
-export function clearSessionApprovals(): void {
-  sessionApproved.clear();
 }

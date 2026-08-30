@@ -69,6 +69,7 @@
       "./plugins/with-background-agent",
       "./plugins/with-scheduler-alarm",
       "./plugins/with-libbox",
+      "./plugins/with-package-visibility",
       ["expo-splash-screen", {
         "backgroundColor": "#5996FF",
         "image": "./assets/images/splash-icon.png",

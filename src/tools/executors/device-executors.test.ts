@@ -23,11 +23,6 @@ vi.mock('expo-file-system', () => ({
   EncodingType: { UTF8: 'utf8' },
 }))
 
-vi.mock('../device-tools', () => ({
-  isAppApprovedForSession: vi.fn(() => true),
-  getSessionApprovedPackages: vi.fn(() => []),
-}))
-
 describe('device.open_app foreground verification', () => {
   beforeEach(() => {
     native.getTree.mockReset()
@@ -62,6 +57,7 @@ describe('device.open_app foreground verification', () => {
 
     expect(result.status).toBe('launched_unverified')
     expect(result.verified).toBe(false)
+    expect(native.getTree).toHaveBeenCalledTimes(1)
   })
 
   it('never verifies another foreground package', async () => {

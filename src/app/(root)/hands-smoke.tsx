@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { wrapToolsWithApproval } from "@/modules/runtime/tool-approval";
-import { createDeviceToolSet, isDeviceAppApproved } from "@/tools/bridge";
+import { createDeviceToolSet } from "@/tools/bridge";
 
 type SmokeStatus = "idle" | "running" | "pass" | "fail";
 
@@ -38,9 +38,6 @@ export default function HandsSmokeScreen() {
           throw new Error("Accessibility Hands tools are not executable");
         }
 
-        // AccessibilityService binding is asynchronous even after Android reports
-        // the service enabled. Retry the real observation instead of converting a
-        // transient binding race into a false Hands failure.
         let observed: any = null;
         for (let attempt = 1; attempt <= 30; attempt += 1) {
           observed = await observe.execute(
@@ -85,15 +82,12 @@ export default function HandsSmokeScreen() {
           { toolCallId: "hands-open-app", messages: [], context: {} },
         );
         log(`HANDS_OPEN_APP_RESULT status=${String(openResult?.status)}`);
-        const approved = isDeviceAppApproved("com.android.settings");
-        log(`HANDS_SESSION_APPROVED=${String(approved)} package=com.android.settings`);
         if (
           openResult?.status !== "launched_verified" ||
           openResult?.packageName !== "com.android.settings" ||
-          openResult?.verified !== true ||
-          !approved
+          openResult?.verified !== true
         ) {
-          throw new Error(`Unexpected open-app result/approval: ${JSON.stringify(openResult)}`);
+          throw new Error(`Unexpected open-app result: ${JSON.stringify(openResult)}`);
         }
         log("HANDS_NATIVE_INTENT_REQUESTED package=com.android.settings");
         log("PASS:DEVICE_OPEN_APP_LAUNCHED_VERIFIED");

@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: android-release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-android:
@@ -91,7 +91,7 @@ jobs:
           export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/28.0.13004108"
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
           java -version
           sdkmanager --version
           sdkmanager --sdk_root="$ANDROID_HOME" --list_installed | grep -E 'platforms;android-(21|23|35|36)|build-tools;(35|36).0.0|ndk;28.0.13004108'

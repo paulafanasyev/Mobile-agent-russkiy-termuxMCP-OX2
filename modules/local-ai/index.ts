@@ -1,5 +1,6 @@
 import { requireNativeModule } from "expo-modules-core";
 import * as SecureStore from "expo-secure-store";
+import { PermissionsAndroid, Platform } from "react-native";
 
 export type SvetlanaVoiceCapabilities = {
   supported: boolean;
@@ -31,6 +32,25 @@ const AZURE_SPEECH_KEY = "OX2_AZURE_SPEECH_KEY";
 const AZURE_SPEECH_REGION = "OX2_AZURE_SPEECH_REGION";
 const NativeSvetlanaVoice = requireNativeModule<NativeSvetlanaVoice>("SvetlanaVoice");
 
+async function ensureMicrophonePermission(): Promise<void> {
+  if (Platform.OS !== "android") return;
+
+  const permission = PermissionsAndroid.PERMISSIONS.RECORD_AUDIO;
+  const current = await PermissionsAndroid.check(permission);
+  if (current) return;
+
+  const result = await PermissionsAndroid.request(permission, {
+    title: "Микрофон для Светланы",
+    message: "Светлане нужен доступ к микрофону для голосового общения.",
+    buttonPositive: "Разрешить",
+    buttonNegative: "Не сейчас",
+  });
+
+  if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+    throw new Error("Доступ к микрофону не разрешён. Разрешите его в настройках приложения и повторите попытку.");
+  }
+}
+
 export async function getAzureSpeechCredentials(): Promise<{ subscriptionKey: string; region: string }> {
   const [subscriptionKey, region] = await Promise.all([
     SecureStore.getItemAsync(AZURE_SPEECH_KEY),
@@ -53,7 +73,10 @@ export async function setAzureSpeechCredentials(subscriptionKey: string, region:
 
 export const SvetlanaVoice = {
   capabilities: () => NativeSvetlanaVoice.capabilities(),
-  listen: () => NativeSvetlanaVoice.listen(),
+  listen: async () => {
+    await ensureMicrophonePermission();
+    return NativeSvetlanaVoice.listen();
+  },
   stopListening: () => NativeSvetlanaVoice.stopListening(),
   stopSpeaking: () => NativeSvetlanaVoice.stopSpeaking(),
   addListener: (eventName: string, listener: (event: SvetlanaVoiceEvent) => void) => NativeSvetlanaVoice.addListener(eventName, listener),
