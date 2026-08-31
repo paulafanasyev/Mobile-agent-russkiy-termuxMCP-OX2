@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
-import { wrapToolsWithApproval } from "@/modules/runtime/tool-approval";
-import { createDeviceToolSet, isDeviceAppApproved } from "@/tools/bridge";
+import { getToolApproval, setToolApproval, wrapToolsWithApproval } from "@/modules/runtime/tool-approval";
+import { createDeviceToolSet } from "@/tools/bridge";
 
 type SmokeStatus = "idle" | "running" | "pass" | "fail";
 
@@ -23,6 +23,12 @@ export default function HandsSmokeScreen() {
       try {
         setStatus("running");
         log("HANDS_SMOKE_START");
+
+        // Smoke uses the persistent approval store, not the removed session-only package Set.
+        await setToolApproval("device.open_app", "always");
+        const approval = await getToolApproval("device.open_app");
+        if (approval !== "always") throw new Error("Smoke requires always approval for device.open_app");
+        log("HANDS_OPEN_APP_APPROVAL=always");
 
         const deviceTools = createDeviceToolSet();
         const wrapped = wrapToolsWithApproval(deviceTools, {
@@ -85,13 +91,13 @@ export default function HandsSmokeScreen() {
           { toolCallId: "hands-open-app", messages: [], context: {} },
         );
         log(`HANDS_OPEN_APP_RESULT status=${String(openResult?.status)}`);
-        const approved = isDeviceAppApproved("com.android.settings");
-        log(`HANDS_SESSION_APPROVED=${String(approved)} package=com.android.settings`);
+        const persistedApproval = await getToolApproval("device.open_app");
+        log(`HANDS_PERSISTENT_APPROVAL=${String(persistedApproval)} capability=device.open_app`);
         if (
           openResult?.status !== "launched_verified" ||
           openResult?.packageName !== "com.android.settings" ||
           openResult?.verified !== true ||
-          !approved
+          persistedApproval !== "always"
         ) {
           throw new Error(`Unexpected open-app result/approval: ${JSON.stringify(openResult)}`);
         }

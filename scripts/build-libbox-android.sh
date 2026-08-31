@@ -58,6 +58,28 @@ ACTUAL_COMMIT="$(git rev-parse HEAD)"
 
 export PATH="$(go env GOPATH)/bin:$PATH"
 
+# Go module downloads can fail transiently at proxy.golang.org with HTTP/2
+# INTERNAL_ERROR. Keep the normal proxy first, retry, then fall back to the
+# module's VCS source before compilation. This does not change pinned versions.
+export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
+echo "==> Go module proxy: $GOPROXY"
+
+go_mod_download() {
+  local attempt
+  for attempt in 1 2 3; do
+    echo "==> Downloading Go modules (attempt $attempt/3)"
+    if go mod download; then
+      return 0
+    fi
+    sleep $((attempt * 3))
+  done
+
+  echo "==> proxy.golang.org failed after retries; retrying Go modules via direct VCS"
+  GOPROXY=direct go mod download
+}
+
+go_mod_download
+
 echo "==> Установка gomobile/gobind $GOMOBILE_VERSION"
 go install "github.com/sagernet/gomobile/cmd/gomobile@$GOMOBILE_VERSION"
 go install "github.com/sagernet/gomobile/cmd/gobind@$GOMOBILE_VERSION"
