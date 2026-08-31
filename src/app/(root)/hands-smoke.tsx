@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react-native";
+import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { getToolApproval, setToolApproval, wrapToolsWithApproval } from "@/modules/runtime/tool-approval";
