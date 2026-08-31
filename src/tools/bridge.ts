@@ -1,11 +1,6 @@
 import { tool, type ToolSet } from 'ai'
 
-import {
-  DEVICE_TOOLS,
-  getSessionApprovedPackages,
-  isAppApprovedForSession,
-  approveAppForSession,
-} from './device-tools'
+import { DEVICE_TOOLS } from './device-tools'
 import { ACCESSIBILITY_TOOLS, uiActSchema, uiObserveSchema } from './accessibility-tools'
 import {
   executeFileRead,
@@ -14,16 +9,19 @@ import {
   openAppSchema,
   readFileSchema,
 } from './executors/device-executors'
-import {
-  executeUiAction,
-  executeUiObserve,
-} from './executors/accessibility-executors'
+import { executeUiAction, executeUiObserve } from './executors/accessibility-executors'
 import { requestDeviceToolApproval } from '@/modules/runtime/tool-approval'
 
 function getContract(id: string) {
   const contract = [...DEVICE_TOOLS, ...ACCESSIBILITY_TOOLS].find((item) => item.id === id)
   if (!contract) throw new Error(`Missing device tool contract: ${id}`)
   return contract
+}
+
+async function requireDeviceApproval(toolName: string, input: unknown) {
+  const decision = await requestDeviceToolApproval(toolName, input)
+  if (decision === 'abort') throw new Error('Request aborted.')
+  return decision === 'approve'
 }
 
 export function createDeviceToolSet(): ToolSet {
@@ -38,11 +36,8 @@ export function createDeviceToolSet(): ToolSet {
       inputSchema: getContract('device.open_app').inputSchema,
       execute: async (args) => {
         const parsed = openAppSchema.parse(args)
-        if (!isAppApprovedForSession(parsed.packageName)) {
-          const decision = await requestDeviceToolApproval('device.open_app', parsed)
-          if (decision === 'abort') throw new Error('Request aborted.')
-          if (decision !== 'approve') return { status: 'needs_approval', packageName: parsed.packageName }
-          approveAppForSession(parsed.packageName)
+        if (!(await requireDeviceApproval('device.open_app', parsed))) {
+          return { status: 'needs_approval', packageName: parsed.packageName }
         }
         return executeOpenApp(parsed)
       },
@@ -57,9 +52,9 @@ export function createDeviceToolSet(): ToolSet {
       inputSchema: uiObserveSchema,
       execute: async (args) => {
         const parsed = uiObserveSchema.parse(args)
-        const decision = await requestDeviceToolApproval('device.ui.observe', parsed)
-        if (decision === 'abort') throw new Error('Request aborted.')
-        if (decision !== 'approve') return { status: 'needs_approval', nodes: [] }
+        if (!(await requireDeviceApproval('device.ui.observe', parsed))) {
+          return { status: 'needs_approval', nodes: [] }
+        }
         return executeUiObserve(parsed.maxNodes)
       },
     }),
@@ -68,19 +63,11 @@ export function createDeviceToolSet(): ToolSet {
       inputSchema: uiActSchema,
       execute: async (args) => {
         const parsed = uiActSchema.parse(args)
-        const decision = await requestDeviceToolApproval('device.ui.act', parsed)
-        if (decision === 'abort') throw new Error('Request aborted.')
-        if (decision !== 'approve') return { status: 'needs_approval', verified: false }
+        if (!(await requireDeviceApproval('device.ui.act', parsed))) {
+          return { status: 'needs_approval', verified: false }
+        }
         return executeUiAction(parsed)
       },
     }),
   }
-}
-
-export function getDeviceSessionApprovals(): string[] {
-  return getSessionApprovedPackages()
-}
-
-export function isDeviceAppApproved(packageName: string): boolean {
-  return isAppApprovedForSession(packageName)
 }
