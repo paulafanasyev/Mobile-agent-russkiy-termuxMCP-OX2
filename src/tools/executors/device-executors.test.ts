@@ -23,9 +23,8 @@ vi.mock('expo-file-system', () => ({
   EncodingType: { UTF8: 'utf8' },
 }))
 
-vi.mock('../device-tools', () => ({
-  isAppApprovedForSession: vi.fn(() => true),
-  getSessionApprovedPackages: vi.fn(() => []),
+vi.mock('@/modules/runtime/tool-approval', () => ({
+  getToolApproval: vi.fn().mockResolvedValue('always'),
 }))
 
 describe('device.open_app foreground verification', () => {
