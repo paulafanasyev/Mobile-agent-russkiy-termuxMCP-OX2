@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
 // Pure bridge test: do not load Android/Expo native modules into Node/Vitest.
 vi.mock("@/modules/runtime/tool-approval", () => ({
   requestDeviceToolApproval: mocks.requestDeviceToolApproval,
+  getToolApproval: vi.fn(),
+  setToolApproval: vi.fn(),
 }));
 
 vi.mock("@/modules/accessibility-agent", () => ({
@@ -28,13 +30,11 @@ vi.mock("@/tools/executors/accessibility-executors", () => ({
   executeUiObserve: vi.fn(),
 }));
 
-import { approveAppForSession, clearSessionApprovals } from "@/tools/device-tools";
 import { createDeviceToolSet } from "@/tools/bridge";
 
 describe("device.open_app approval bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearSessionApprovals();
   });
 
   it("requests runtime approval before executing an unapproved app", async () => {
@@ -72,8 +72,8 @@ describe("device.open_app approval bridge", () => {
     expect(result).toEqual({ status: "needs_approval", packageName: "com.example.app" });
   });
 
-  it("reuses session approval without asking again", async () => {
-    approveAppForSession("com.example.app");
+  it("passes persistent always approval through to the executor", async () => {
+    mocks.requestDeviceToolApproval.mockResolvedValue("approve");
     mocks.executeOpenApp.mockResolvedValue({ status: "launched", packageName: "com.example.app" });
 
     const toolSet = createDeviceToolSet();
@@ -81,10 +81,10 @@ describe("device.open_app approval bridge", () => {
     if (!execute) throw new Error("device.open_app is not executable");
     await execute(
       { packageName: "com.example.app" },
-      { toolCallId: "bridge-approval-test-session", messages: [], context: {} },
+      { toolCallId: "bridge-approval-test-always", messages: [], context: {} },
     );
 
-    expect(mocks.requestDeviceToolApproval).not.toHaveBeenCalled();
+    expect(mocks.requestDeviceToolApproval).toHaveBeenCalledTimes(1);
     expect(mocks.executeOpenApp).toHaveBeenCalledWith({ packageName: "com.example.app" });
   });
 });

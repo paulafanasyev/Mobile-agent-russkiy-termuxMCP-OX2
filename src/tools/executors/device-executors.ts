@@ -2,7 +2,7 @@
  * P1-2: Native executors for device tools.
  *
  * Architecture (cycle 145):
- * - device-tools.ts = the single source of session approval state;
+ * - tool-approval.ts = the single source of persistent approval state;
  * - this file = execution only, consuming the public approval API;
  * - registry = contracts; executors = machine.
  *
@@ -14,10 +14,7 @@ import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import { requireNativeModule } from 'expo';
 import { z } from 'zod';
-import {
-  isAppApprovedForSession,
-  getSessionApprovedPackages,
-} from '../device-tools';
+import { getToolApproval } from '@/modules/runtime/tool-approval';
 
 export const openAppSchema = z.object({
   packageName: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i),
@@ -43,11 +40,11 @@ export async function executeListApps(): Promise<{
   count: number;
   apps: Array<{ name: string; packageName: string }>;
 }> {
-  const apps = getSessionApprovedPackages().map((pkg) => ({
-    name: pkg.split('.').pop() ?? pkg,
-    packageName: pkg,
-  }));
-  return { status: 'listed', count: apps.length, apps };
+  // Session-only approved package enumeration was removed with the old approval Set.
+  // Keep the executor contract stable; package discovery remains outside approved-only v1.
+  const approval = await getToolApproval('device.open_app');
+  if (approval !== 'always') return { status: 'needs_approval', count: 0, apps: [] };
+  return { status: 'listed', count: 0, apps: [] };
 }
 
 async function getForegroundPackage(): Promise<string | null> {
@@ -70,11 +67,12 @@ async function waitForForegroundPackage(packageName: string, timeoutMs = 2000): 
   return false;
 }
 
-/** device.open_app — launch only after explicit session approval and verify foreground transition. */
+/** device.open_app — launch only after persistent approval and verify foreground transition. */
 export async function executeOpenApp(
   args: z.infer<typeof openAppSchema>,
 ): Promise<{ status: string; packageName: string; verified: boolean }> {
-  if (!isAppApprovedForSession(args.packageName)) {
+  const approval = await getToolApproval('device.open_app');
+  if (approval !== 'always') {
     return { status: 'needs_approval', packageName: args.packageName, verified: false };
   }
 
