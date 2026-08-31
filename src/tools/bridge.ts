@@ -10,7 +10,13 @@ import {
   readFileSchema,
 } from './executors/device-executors'
 import { executeUiAction, executeUiObserve } from './executors/accessibility-executors'
-import { requestDeviceToolApproval } from '@/modules/runtime/tool-approval'
+import {
+  getToolApproval,
+  requestDeviceToolApproval,
+  setToolApproval,
+} from '@/modules/runtime/tool-approval'
+
+export { getToolApproval, setToolApproval } from '@/modules/runtime/tool-approval'
 
 function getContract(id: string) {
   const contract = [...DEVICE_TOOLS, ...ACCESSIBILITY_TOOLS].find((item) => item.id === id)
