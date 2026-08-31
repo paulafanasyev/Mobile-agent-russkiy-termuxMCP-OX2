@@ -61,6 +61,40 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
+      - name: Prepare strict launch smoke probe
+        env:
+          PROBE_SCRIPT: ${{ runner.temp }}/strict-launch-smoke.sh
+        run: |
+          cat > "$PROBE_SCRIPT" <<'PROBE_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          adb install -r smoke.apk
+          adb logcat -c
+          adb shell am force-stop ru.mirsamozanyatykh.mobileagent || true
+          adb shell am start -W -n ru.mirsamozanyatykh.mobileagent/.MainActivity
+          PID=''
+          for _ in $(seq 1 30); do
+            PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
+            if [ -n "$PID" ]; then break; fi
+            sleep 2
+          done
+          test -n "$PID"
+          adb exec-out screencap -p > screenshot.png
+          adb shell dumpsys activity activities | tr -d '\r' > resumed.txt
+          adb shell dumpsys window | tr -d '\r' > focus.txt
+          grep -q 'ru.mirsamozanyatykh.mobileagent' resumed.txt
+          grep -q 'mResumedActivity\|topResumedActivity' resumed.txt
+          adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
+          adb shell cat /sdcard/ui.xml > ui-dump.xml 2>/dev/null || true
+          adb logcat -d -v time > full-logcat.txt
+          grep -E 'FATAL EXCEPTION|AndroidRuntime' full-logcat.txt > crash-evidence.txt || true
+          test ! -s crash-evidence.txt
+          echo 'STRICT_SMOKE=PASSED'
+          PROBE_EOF
+          chmod +x "$PROBE_SCRIPT"
+          bash -n "$PROBE_SCRIPT"
+
       - name: Strict launch smoke on API 30
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -68,30 +102,7 @@ jobs:
           arch: x86_64
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: |
-            set -eu
-            adb install -r smoke.apk
-            adb logcat -c
-            adb shell am force-stop ru.mirsamozanyatykh.mobileagent || true
-            adb shell am start -W -n ru.mirsamozanyatykh.mobileagent/.MainActivity
-            PID=''
-            for _ in $(seq 1 30); do
-              PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
-              if [ -n "$PID" ]; then break; fi
-              sleep 2
-            done
-            test -n "$PID"
-            adb exec-out screencap -p > screenshot.png
-            adb shell dumpsys activity activities | tr -d '\r' > resumed.txt
-            adb shell dumpsys window | tr -d '\r' > focus.txt
-            grep -q 'ru.mirsamozanyatykh.mobileagent' resumed.txt
-            grep -q 'mResumedActivity\|topResumedActivity' resumed.txt
-            adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
-            adb shell cat /sdcard/ui.xml > ui-dump.xml 2>/dev/null || true
-            adb logcat -d -v time > full-logcat.txt
-            grep -E 'FATAL EXCEPTION|AndroidRuntime' full-logcat.txt > crash-evidence.txt || true
-            test ! -s crash-evidence.txt
-            echo 'STRICT_SMOKE=PASSED'
+          script: bash "${{ runner.temp }}/strict-launch-smoke.sh"
 
       - name: Evidence upload
         if: always()
