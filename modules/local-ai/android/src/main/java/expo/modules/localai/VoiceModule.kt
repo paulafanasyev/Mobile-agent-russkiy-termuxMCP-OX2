@@ -1,5 +1,6 @@
 package expo.modules.localai
 
+import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Handler
@@ -9,6 +10,9 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import androidx.core.content.ContextCompat
+import com.facebook.react.modules.core.PermissionAwareActivity
+import com.facebook.react.modules.core.PermissionListener
 import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisCancellationDetails
@@ -34,6 +38,51 @@ class VoiceModule : Module() {
     return context.packageManager.queryIntentServices(intent, PackageManager.MATCH_ALL).isNotEmpty()
   }
 
+  private suspend fun ensureMicrophonePermission(): Boolean = suspendCancellableCoroutine { continuation ->
+    val context = appContext.reactContext
+    val activity = appContext.currentActivity
+    if (context == null || activity == null) {
+      continuation.resume(false)
+      return@suspendCancellableCoroutine
+    }
+
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+      continuation.resume(true)
+      return@suspendCancellableCoroutine
+    }
+
+    val permissionActivity = activity as? PermissionAwareActivity
+    if (permissionActivity == null) {
+      sendEvent("onSpeechError", mapOf("message" to "Не удалось запросить доступ к микрофону. Откройте разрешения приложения и разрешите микрофон."))
+      continuation.resume(false)
+      return@suspendCancellableCoroutine
+    }
+
+    val requestCode = 4107
+    val listener = object : PermissionListener {
+      override fun onRequestPermissionsResult(
+        requestCodeResult: Int,
+        permissions: Array<out String>?,
+        grantResults: IntArray?,
+      ): Boolean {
+        if (requestCodeResult != requestCode) return false
+        val granted = grantResults?.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        if (continuation.isActive) continuation.resume(granted)
+        return true
+      }
+    }
+
+    try {
+      android.util.Log.i("SvetlanaVoice", "RECORD_AUDIO requestPermissions: awaiting onRequestPermissionsResult")
+      permissionActivity.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), requestCode, listener)
+    } catch (error: Exception) {
+      android.util.Log.e("SvetlanaVoice", "RECORD_AUDIO request failed", error)
+      if (continuation.isActive) continuation.resume(false)
+    }
+
+    continuation.invokeOnCancellation { /* React Native owns the permission callback lifecycle. */ }
+  }
+
   override fun definition() = ModuleDefinition {
     Name("SvetlanaVoice")
     Events("onVisemeReceived", "onSpeechCompleted", "onSpeechError")
@@ -53,12 +102,12 @@ class VoiceModule : Module() {
     AsyncFunction("listen") Coroutine { ->
       val context = appContext.reactContext
         ?: throw IllegalStateException("Android context unavailable")
-      if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-        val activity = appContext.currentActivity
-        activity?.requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 4107)
-        sendEvent("onSpeechError", mapOf("message" to "Для голосового ввода разрешите доступ к микрофону."))
-        throw SecurityException("Microphone permission is required. Permission request was started.")
+
+      if (!ensureMicrophonePermission()) {
+        sendEvent("onSpeechError", mapOf("message" to "Нет разрешения на микрофон. Разрешите доступ к микрофону в настройках приложения."))
+        throw SecurityException("Microphone permission was not granted.")
       }
+
       if (!SpeechRecognizer.isRecognitionAvailable(context)) {
         sendEvent("onSpeechError", mapOf("message" to "На этом устройстве недоступна служба распознавания речи. Используйте ручной ввод."))
         throw IllegalStateException("Speech recognition is not available on this device")
@@ -91,6 +140,7 @@ class VoiceModule : Module() {
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
           }
           try {
+            android.util.Log.i("SvetlanaVoice", "RECORD_AUDIO granted; SpeechRecognizer.startListening()")
             recognizer?.startListening(intent)
           } catch (error: IllegalStateException) {
             finish {
@@ -231,9 +281,7 @@ class VoiceModule : Module() {
                 }
                 engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                   override fun onStart(id: String?) = Unit
-                  override fun onDone(id: String?) {
-                    if (id == utteranceId) handler.post { finish { continuation.resume(true) } }
-                  }
+                  override fun onDone(id: String?) { if (id == utteranceId) handler.post { finish { continuation.resume(true) } } }
                   override fun onError(id: String?) {
                     if (id == utteranceId) handler.post {
                       sendEvent("onSpeechError", mapOf("message" to "Android TTS не смог озвучить ответ. Ответ оставлен текстом."))
