@@ -81,7 +81,6 @@ jobs:
 
       - name: Run real Android Hands probe
         id: hands_probe
-        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
@@ -95,8 +94,6 @@ jobs:
         run: |
           set +e
           echo "probe_outcome=${{ steps.hands_probe.outcome }}"
-          pwd
-          ls -la
           for f in hands-accessibility-dump.txt hands-logcat.txt hands-fatal.txt hands-runtime.txt hands-launch.txt hands-top.txt hands-target-pid.txt hands-activities-before.txt hands-window-before.txt hands-activities-after.txt hands-window-after.txt hands-ui-before.xml hands-ui-after.xml hands-before.png hands-after.png; do
             if [ -e "$f" ]; then echo "EVIDENCE_PRESENT=$f size=$(wc -c < "$f")"; else echo "EVIDENCE_MISSING=$f"; fi
           done
@@ -126,7 +123,3 @@ jobs:
             hands-logcat.txt
             hands-fatal.txt
           if-no-files-found: warn
-
-      - name: Enforce Hands probe result
-        if: always()
-        run: test "${{ steps.hands_probe.outcome }}" = success
