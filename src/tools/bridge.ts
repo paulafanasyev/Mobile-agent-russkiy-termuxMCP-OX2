@@ -47,16 +47,10 @@ export function createDeviceToolSet(): ToolSet {
       inputSchema: getContract('device.open_app').inputSchema,
       execute: async (args) => {
         const parsed = openAppSchema.parse(args)
-        if (!isAppApprovedForSession(parsed.packageName)) {
-          if (await isHandsAlwaysAllowed()) {
-            approveAppForSession(parsed.packageName)
-          } else {
-            const decision = await requestDeviceToolApproval('device.open_app', parsed)
-            if (decision === 'abort') throw new Error('Request aborted.')
-            if (decision !== 'approve') return { status: 'needs_approval', packageName: parsed.packageName }
-            approveAppForSession(parsed.packageName)
-          }
+        if (!(await approveHandsTool('device.open_app', parsed))) {
+          return { status: 'needs_approval', packageName: parsed.packageName }
         }
+        approveAppForSession(parsed.packageName)
         return executeOpenApp(parsed)
       },
     }),
