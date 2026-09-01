@@ -59,8 +59,15 @@ jobs:
           set -euo pipefail
           BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
           "$BT/aapt2" dump badging release-smoke.apk | tee badging.txt | head -25
-          grep -q "package: name='ru.mirsamozanyatykh.mobileagent'" badging.txt
-          grep -q "versionCode='3'" badging.txt
+          if ! grep -q "package: name='ru.mirsamozanyatykh.mobileagent'" badging.txt; then
+            echo 'FAIL:M1_PACKAGE_NAME' | tee m1-fail.txt
+            exit 1
+          fi
+          if ! grep -q "versionCode='3'" badging.txt; then
+            echo 'FAIL:M1_VERSION_CODE' | tee m1-fail.txt
+            exit 1
+          fi
+          echo 'M1_MANIFEST=PASS' | tee m1-runtime.txt
 
       - name: Prepare Chat runtime probe
         env:
@@ -68,28 +75,71 @@ jobs:
         run: |
           cat > "$PROBE_SCRIPT" <<'PROBE_EOF'
           #!/usr/bin/env bash
-          set -euo pipefail
+          set -u
           cd "$GITHUB_WORKSPACE"
           APK="$GITHUB_WORKSPACE/release-smoke.apk"
-          test -s "$APK"
-          adb install -r "$APK"
-          adb logcat -c
-          echo "INSTALL=PASS" | tee runtime.txt
-          adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1
-          sleep 10
-          adb exec-out screencap -p > chat-screenshot.png
-          adb shell dumpsys activity activities | tr -d '\r' > chat-activities.txt
-          adb shell dumpsys window | tr -d '\r' > chat-window.txt
-          grep -q 'ru.mirsamozanyatykh.mobileagent' chat-activities.txt
-          echo "CHAT_ROUTE=PASS" | tee -a runtime.txt
-          adb shell uiautomator dump /sdcard/chat-ui.xml >/dev/null 2>&1 || true
-          adb shell cat /sdcard/chat-ui.xml > chat-ui.xml 2>/dev/null || true
-          adb logcat -d -v time > full-logcat.txt
-          if grep -Eq 'FATAL EXCEPTION|AndroidRuntime.*FATAL' full-logcat.txt && grep -Eq 'Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)' full-logcat.txt; then
-            echo 'CRASH_GATE=FAIL' | tee -a runtime.txt
+          FAIL=0
+          fail() { echo "FAIL:$1" | tee -a runtime.txt; FAIL=1; }
+          require() { local label="$1"; shift; if ! "$@"; then fail "$label"; fi; }
+          : > runtime.txt
+          : > m1-runtime.txt
+          if [ ! -s "$APK" ]; then fail 'APK_MISSING'; exit 1; fi
+
+          if ! adb install -r "$APK"; then
+            fail 'APK_INSTALL'
+            adb devices -l > adb-devices.txt 2>&1 || true
+            adb shell getprop > fail-getprop.txt 2>&1 || true
+            adb logcat -d -v time > full-logcat.txt 2>&1 || true
             exit 1
           fi
-          echo 'CRASH_GATE=PASS' | tee -a runtime.txt
+          adb logcat -c || true
+          echo 'INSTALL=PASS' | tee -a runtime.txt
+
+          if ! adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1 > launch.txt 2>&1; then
+            fail 'LAUNCH_COMMAND'
+          else
+            echo 'LAUNCH_COMMAND=PASS' | tee -a runtime.txt
+          fi
+          sleep 10
+
+          adb devices -l > adb-devices.txt 2>&1 || true
+          adb shell dumpsys activity activities | tr -d '\r' > chat-activities.txt 2>&1 || true
+          adb shell dumpsys window | tr -d '\r' > chat-window.txt 2>&1 || true
+          adb shell dumpsys package ru.mirsamozanyatykh.mobileagent | tr -d '\r' > chat-package.txt 2>&1 || true
+          adb shell pidof ru.mirsamozanyatykh.mobileagent > chat-pid.txt 2>&1 || true
+          adb logcat -d -v time > full-logcat.txt 2>&1 || true
+
+          if ! grep -q 'ru.mirsamozanyatykh.mobileagent' chat-activities.txt; then
+            fail 'CHAT_ACTIVITY_NOT_FOUND'
+          else
+            echo 'CHAT_ACTIVITY=PASS' | tee -a runtime.txt
+          fi
+
+          if [ ! -s chat-screenshot.png ]; then
+            if ! adb exec-out screencap -p > chat-screenshot.png 2>screenshot.err; then
+              fail 'SCREENSHOT_COMMAND'
+            elif [ ! -s chat-screenshot.png ]; then
+              fail 'SCREENSHOT_EMPTY'
+            else
+              echo 'SCREENSHOT=PASS' | tee -a runtime.txt
+            fi
+          else
+            echo 'SCREENSHOT=PASS' | tee -a runtime.txt
+          fi
+
+          if grep -Eq 'FATAL EXCEPTION|AndroidRuntime.*FATAL' full-logcat.txt && grep -Eq 'Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)' full-logcat.txt; then
+            fail 'CRASH_GATE'
+          else
+            echo 'CRASH_GATE=PASS' | tee -a runtime.txt
+          fi
+
+          if [ "$FAIL" -ne 0 ]; then
+            echo 'P0_RUNTIME=FAIL' | tee -a runtime.txt
+            adb shell dumpsys activity activities > fail-activities.txt 2>&1 || true
+            adb shell dumpsys window > fail-window.txt 2>&1 || true
+            exit 1
+          fi
+          echo 'CHAT_ROUTE=PASS' | tee -a runtime.txt
           echo 'P0_RUNTIME=PASS' | tee -a runtime.txt
           PROBE_EOF
           chmod +x "$PROBE_SCRIPT"
@@ -115,10 +165,20 @@ jobs:
             apk-sha256.txt
             apk-size.txt
             badging.txt
+            m1-runtime.txt
+            m1-fail.txt
             runtime.txt
+            launch.txt
+            adb-devices.txt
             chat-screenshot.png
             chat-activities.txt
             chat-window.txt
+            chat-package.txt
+            chat-pid.txt
+            fail-activities.txt
+            fail-window.txt
+            fail-getprop.txt
+            screenshot.err
             chat-ui.xml
             full-logcat.txt
           if-no-files-found: warn
