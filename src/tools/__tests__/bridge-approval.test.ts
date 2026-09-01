@@ -3,11 +3,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requestDeviceToolApproval: vi.fn(),
   executeOpenApp: vi.fn(),
+  isHandsAlwaysAllowed: vi.fn().mockResolvedValue(false),
 }));
 
 // Pure bridge test: do not load Android/Expo native modules into Node/Vitest.
 vi.mock("@/modules/runtime/tool-approval", () => ({
   requestDeviceToolApproval: mocks.requestDeviceToolApproval,
+}));
+
+vi.mock("@/modules/runtime/hands-permission", () => ({
+  isHandsAlwaysAllowed: mocks.isHandsAlwaysAllowed,
+}));
+
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
+  deleteItemAsync: vi.fn(),
 }));
 
 vi.mock("@/modules/accessibility-agent", () => ({
@@ -31,9 +42,10 @@ vi.mock("@/tools/executors/accessibility-executors", () => ({
 import { approveAppForSession, clearSessionApprovals } from "@/tools/device-tools";
 import { createDeviceToolSet } from "@/tools/bridge";
 
-describe("device.open_app approval bridge", () => {
+describe("device approval bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isHandsAlwaysAllowed.mockResolvedValue(false);
     clearSessionApprovals();
   });
 
@@ -82,6 +94,22 @@ describe("device.open_app approval bridge", () => {
     await execute(
       { packageName: "com.example.app" },
       { toolCallId: "bridge-approval-test-session", messages: [], context: {} },
+    );
+
+    expect(mocks.requestDeviceToolApproval).not.toHaveBeenCalled();
+    expect(mocks.executeOpenApp).toHaveBeenCalledWith({ packageName: "com.example.app" });
+  });
+
+  it("persistent Hands approval bypasses runtime approval", async () => {
+    mocks.isHandsAlwaysAllowed.mockResolvedValue(true);
+    mocks.executeOpenApp.mockResolvedValue({ status: "launched", packageName: "com.example.app" });
+
+    const toolSet = createDeviceToolSet();
+    const execute = toolSet["device.open_app"].execute;
+    if (!execute) throw new Error("device.open_app is not executable");
+    await execute(
+      { packageName: "com.example.app" },
+      { toolCallId: "bridge-approval-test-always", messages: [], context: {} },
     );
 
     expect(mocks.requestDeviceToolApproval).not.toHaveBeenCalled();
