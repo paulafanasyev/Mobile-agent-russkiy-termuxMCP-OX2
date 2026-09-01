@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_harness_layout() -> None:
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[4]
     assert (root / "package.json").exists()
     assert (root / "agent-harness" / "setup.py").exists()
 
