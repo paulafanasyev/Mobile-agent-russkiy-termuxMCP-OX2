@@ -4,6 +4,7 @@ import { Mic, MicOff, Volume2 } from "lucide-react-native";
 
 import { useChat } from "@/hooks/use-chat";
 import { useTheme } from "@/hooks/use-theme";
+// Voice remains attached to the existing working chat surface; there is no dedicated Svetlana screen.
 import { SvetlanaVoice } from "../../../modules/local-ai";
 
 async function ensureMicrophonePermission() {
