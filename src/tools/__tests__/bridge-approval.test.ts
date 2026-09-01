@@ -15,14 +15,27 @@ vi.mock("@/modules/runtime/hands-permission", () => ({
   isHandsAlwaysAllowed: mocks.isHandsAlwaysAllowed,
 }));
 
-vi.mock("expo-secure-store", () => ({
-  getItemAsync: vi.fn(),
-  setItemAsync: vi.fn(),
-  deleteItemAsync: vi.fn(),
-}));
-
 vi.mock("@/modules/accessibility-agent", () => ({
   isAccessibilityEnabled: vi.fn().mockResolvedValue(true),
+}));
+
+// accessibility-tools contains a lazy native import. Mock the whole contract
+// module so Rolldown never parses React Native Flow sources in Node/Vitest.
+vi.mock("@/tools/accessibility-tools", () => ({
+  ACCESSIBILITY_TOOLS: [
+    {
+      id: "device.ui.observe",
+      description: "observe",
+      inputSchema: { parse: (value: unknown) => value },
+    },
+    {
+      id: "device.ui.act",
+      description: "act",
+      inputSchema: { parse: (value: unknown) => value },
+    },
+  ],
+  uiObserveSchema: { parse: (value: unknown) => value },
+  uiActSchema: { parse: (value: unknown) => value },
 }));
 
 vi.mock("@/tools/executors/device-executors", () => ({
