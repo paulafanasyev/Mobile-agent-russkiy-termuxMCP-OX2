@@ -19,11 +19,20 @@ import {
   executeUiObserve,
 } from './executors/accessibility-executors'
 import { requestDeviceToolApproval } from '@/modules/runtime/tool-approval'
+import { isHandsAlwaysAllowed } from '@/modules/runtime/hands-permission'
 
 function getContract(id: string) {
   const contract = [...DEVICE_TOOLS, ...ACCESSIBILITY_TOOLS].find((item) => item.id === id)
   if (!contract) throw new Error(`Missing device tool contract: ${id}`)
   return contract
+}
+
+async function approveHandsTool(toolName: string, toolInput: unknown): Promise<boolean> {
+  if (await isHandsAlwaysAllowed()) return true
+
+  const decision = await requestDeviceToolApproval(toolName, toolInput)
+  if (decision === 'abort') throw new Error('Request aborted.')
+  return decision === 'approve'
 }
 
 export function createDeviceToolSet(): ToolSet {
@@ -39,10 +48,14 @@ export function createDeviceToolSet(): ToolSet {
       execute: async (args) => {
         const parsed = openAppSchema.parse(args)
         if (!isAppApprovedForSession(parsed.packageName)) {
-          const decision = await requestDeviceToolApproval('device.open_app', parsed)
-          if (decision === 'abort') throw new Error('Request aborted.')
-          if (decision !== 'approve') return { status: 'needs_approval', packageName: parsed.packageName }
-          approveAppForSession(parsed.packageName)
+          if (await isHandsAlwaysAllowed()) {
+            approveAppForSession(parsed.packageName)
+          } else {
+            const decision = await requestDeviceToolApproval('device.open_app', parsed)
+            if (decision === 'abort') throw new Error('Request aborted.')
+            if (decision !== 'approve') return { status: 'needs_approval', packageName: parsed.packageName }
+            approveAppForSession(parsed.packageName)
+          }
         }
         return executeOpenApp(parsed)
       },
@@ -57,9 +70,9 @@ export function createDeviceToolSet(): ToolSet {
       inputSchema: uiObserveSchema,
       execute: async (args) => {
         const parsed = uiObserveSchema.parse(args)
-        const decision = await requestDeviceToolApproval('device.ui.observe', parsed)
-        if (decision === 'abort') throw new Error('Request aborted.')
-        if (decision !== 'approve') return { status: 'needs_approval', nodes: [] }
+        if (!(await approveHandsTool('device.ui.observe', parsed))) {
+          return { status: 'needs_approval', nodes: [] }
+        }
         return executeUiObserve(parsed.maxNodes)
       },
     }),
@@ -68,9 +81,9 @@ export function createDeviceToolSet(): ToolSet {
       inputSchema: uiActSchema,
       execute: async (args) => {
         const parsed = uiActSchema.parse(args)
-        const decision = await requestDeviceToolApproval('device.ui.act', parsed)
-        if (decision === 'abort') throw new Error('Request aborted.')
-        if (decision !== 'approve') return { status: 'needs_approval', verified: false }
+        if (!(await approveHandsTool('device.ui.act', parsed))) {
+          return { status: 'needs_approval', verified: false }
+        }
         return executeUiAction(parsed)
       },
     }),
