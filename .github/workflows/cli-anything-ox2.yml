@@ -1,0 +1,28 @@
+name: CLI-Anything OX2 Harness
+
+on:
+  push:
+    paths:
+      - 'agent-harness/**'
+      - 'skills/cli-anything-ox2/**'
+      - '.github/workflows/cli-anything-ox2.yml'
+  pull_request:
+    paths:
+      - 'agent-harness/**'
+      - 'skills/cli-anything-ox2/**'
+      - '.github/workflows/cli-anything-ox2.yml'
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install harness
+        run: python -m pip install -e 'agent-harness[test]'
+      - name: Verify installed CLI
+        run: cli-anything-ox2 --json info
+      - name: Run harness tests
+        run: python -m pytest -q agent-harness/cli_anything/ox2/tests

@@ -47,7 +47,10 @@ export function createDeviceToolSet(): ToolSet {
       inputSchema: getContract('device.open_app').inputSchema,
       execute: async (args) => {
         const parsed = openAppSchema.parse(args)
-        if (!(await approveHandsTool('device.open_app', parsed))) {
+        // A session approval is an explicit, package-scoped grant. Reuse it
+        // before falling back to the runtime approval prompt.
+        const alreadyApproved = isAppApprovedForSession(parsed.packageName)
+        if (!alreadyApproved && !(await approveHandsTool('device.open_app', parsed))) {
           return { status: 'needs_approval', packageName: parsed.packageName }
         }
         approveAppForSession(parsed.packageName)
