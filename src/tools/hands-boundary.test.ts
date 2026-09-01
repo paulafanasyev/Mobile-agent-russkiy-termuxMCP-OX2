@@ -17,15 +17,21 @@ describe('Hands native boundary', () => {
     expect(moduleSource).not.toMatch(/runApprovedAccessibilityAction|observeAccessibilityTree/)
   })
 
-  it('requires approval before device.ui.observe execution', () => {
+  it('keeps runtime approval before device.ui.observe execution', () => {
     const bridge = source('src/tools/bridge.ts')
     const toolStart = bridge.indexOf("'device.ui.observe': tool({")
     const toolBody = toolStart >= 0 ? bridge.slice(toolStart) : ''
-    const approvalStart = toolBody.indexOf("requestDeviceToolApproval('device.ui.observe', parsed)")
+    const helperStart = bridge.indexOf('async function approveHandsTool(')
+    const helperBody = helperStart >= 0 ? bridge.slice(helperStart, toolStart >= 0 ? toolStart : bridge.length) : ''
+
+    const approvalStart = helperBody.indexOf('requestDeviceToolApproval(toolName, toolInput)')
     const executeStart = toolBody.indexOf('executeUiObserve(')
+    const guardStart = toolBody.indexOf('approveHandsTool(\'device.ui.observe\', parsed)')
 
     expect(toolStart).toBeGreaterThanOrEqual(0)
+    expect(helperStart).toBeGreaterThanOrEqual(0)
     expect(approvalStart).toBeGreaterThanOrEqual(0)
-    expect(executeStart).toBeGreaterThan(approvalStart)
+    expect(guardStart).toBeGreaterThanOrEqual(0)
+    expect(executeStart).toBeGreaterThan(guardStart)
   })
 })
