@@ -10,6 +10,7 @@ export type NativeAccessibilityResult = {
 
 type NativeAccessibilityAgent = {
   isEnabled(): Promise<boolean>
+  openAccessibilitySettings(): Promise<boolean>
   getTree(maxNodes: number): Promise<AccessibilityNode[]>
   perform(actionJson: string): Promise<NativeAccessibilityResult>
 }
@@ -21,6 +22,11 @@ const Native = Platform.OS === 'android'
 export async function nativeIsAccessibilityEnabled(): Promise<boolean> {
   if (!Native) return false
   return Native.isEnabled()
+}
+
+export async function nativeOpenAccessibilitySettings(): Promise<boolean> {
+  if (!Native) return false
+  return Native.openAccessibilitySettings()
 }
 
 export async function nativeGetAccessibilityTree(maxNodes: number): Promise<AccessibilityNode[]> {
