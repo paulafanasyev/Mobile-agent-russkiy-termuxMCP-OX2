@@ -3,7 +3,7 @@ import { StyleSheet, View } from "react-native";
 
 import { AppSidebar } from "@/components/ui/app-sidebar";
 import { SidebarTrigger, SidebarProvider } from "@/components/ui/sidebar";
-import { SvetlanaAvatar } from "@/components/svetlana/svetlana-avatar";
+import { VoiceControl } from "@/components/voice/voice-control";
 
 export default function Layout() {
   return (
@@ -14,8 +14,8 @@ export default function Layout() {
           <SidebarTrigger accessibilityLabel="Открыть меню" />
         </View>
         <Slot />
-        <View pointerEvents="box-none" style={styles.svetlana}>
-          <SvetlanaAvatar compact />
+        <View style={styles.voice} pointerEvents="box-none">
+          <VoiceControl />
         </View>
       </View>
     </SidebarProvider>
@@ -30,9 +30,11 @@ const styles = StyleSheet.create({
     top: 12,
     zIndex: 100,
   },
-  svetlana: {
+  voice: {
     position: "absolute",
+    left: 14,
     right: 14,
-    bottom: 88,
+    bottom: 86,
+    zIndex: 90,
   },
 });
