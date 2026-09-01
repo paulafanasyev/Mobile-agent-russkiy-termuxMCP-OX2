@@ -4,7 +4,7 @@ import { Mic, MicOff, Volume2 } from "lucide-react-native";
 
 import { useChat } from "@/hooks/use-chat";
 import { useTheme } from "@/hooks/use-theme";
-import { SvetlanaVoice } from "@/modules/local-ai";
+import { SvetlanaVoice } from "../../../modules/local-ai";
 
 async function ensureMicrophonePermission() {
   if (Platform.OS !== "android") return true;
@@ -95,11 +95,11 @@ export function VoiceControl() {
           className="h-12 flex-1 flex-row items-center justify-center gap-2 rounded-xl bg-primary"
         >
           {busy ? (
-            <ActivityIndicator color={theme.primaryForeground} />
+            <ActivityIndicator color={theme.text} />
           ) : listening ? (
-            <MicOff color={theme.primaryForeground} size={20} />
+            <MicOff color={theme.text} size={20} />
           ) : (
-            <Mic color={theme.primaryForeground} size={20} />
+            <Mic color={theme.text} size={20} />
           )}
           <Text className="font-sans font-semibold text-primary-foreground">
             {busy ? "Отправляю…" : listening ? "Слушаю…" : "Говорить"}
