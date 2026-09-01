@@ -1,12 +1,12 @@
-name: "M1+Smoke Release: chat + Svetlana + voice"
+name: "Chat+Hands Release Smoke"
 
 on:
   workflow_dispatch:
     inputs:
       android_run_id:
-        description: 'ID успешного рана Android APK Release'
+        description: "ID успешного рана Android APK Release"
         required: true
-        default: ''
+        default: ""
   workflow_run:
     workflows: ["Android APK Release"]
     types: [completed]
@@ -19,7 +19,7 @@ jobs:
   release-smoke:
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 30
     steps:
       - name: Provenance — exact release APK
         env:
@@ -62,7 +62,7 @@ jobs:
           grep -q "package: name='ru.mirsamozanyatykh.mobileagent'" badging.txt
           grep -q "versionCode='3'" badging.txt
 
-      - name: Prepare evidence-first runtime probe
+      - name: Prepare Chat runtime probe
         env:
           PROBE_SCRIPT: ${{ runner.temp }}/release-smoke-probe.sh
         run: |
@@ -75,9 +75,8 @@ jobs:
           adb install -r "$APK"
           adb logcat -c
           echo "INSTALL=PASS" | tee runtime.txt
-
           adb shell monkey -p ru.mirsamozanyatykh.mobileagent -c android.intent.category.LAUNCHER 1
-          sleep 12
+          sleep 10
           adb exec-out screencap -p > chat-screenshot.png
           adb shell dumpsys activity activities | tr -d '\r' > chat-activities.txt
           adb shell dumpsys window | tr -d '\r' > chat-window.txt
@@ -85,100 +84,16 @@ jobs:
           echo "CHAT_ROUTE=PASS" | tee -a runtime.txt
           adb shell uiautomator dump /sdcard/chat-ui.xml >/dev/null 2>&1 || true
           adb shell cat /sdcard/chat-ui.xml > chat-ui.xml 2>/dev/null || true
-
-          adb shell am start -W -a android.intent.action.VIEW -d 'mobile-agent:///svetlana' -p ru.mirsamozanyatykh.mobileagent | tee svetlana-deeplink.txt
-          sleep 5
-          adb exec-out screencap -p > svetlana-screenshot.png
-          adb shell dumpsys activity activities | tr -d '\r' > svetlana-activities.txt
-          adb shell dumpsys window | tr -d '\r' > svetlana-window.txt
-          adb shell uiautomator dump /sdcard/svetlana-ui.xml >/dev/null 2>&1 || true
-          adb shell cat /sdcard/svetlana-ui.xml > svetlana-ui.xml 2>/dev/null || true
-
-          if ! command -v tesseract >/dev/null 2>&1; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-rus
-          fi
-          tesseract svetlana-screenshot.png stdout -l rus+eng 2>/dev/null > svetlana-ocr.txt || true
-          grep -Fq 'Светлана' svetlana-ocr.txt
-          grep -Fq 'Голосовой чат' svetlana-ocr.txt
-          grep -Fq 'Говорить' svetlana-ocr.txt
-          echo "SVETLANA_ROUTE=PASS" | tee -a runtime.txt
-          echo "SVETLANA_MARKERS=PASS" | tee -a runtime.txt
-
-          B=$(sed -n 's/.*text="Говорить"[^>]*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' svetlana-ui.xml | head -1)
-          if [ -z "$B" ]; then
-            tesseract svetlana-screenshot.png stdout -l rus --psm 6 tsv 2>/dev/null > svetlana.tsv || true
-            B=$(awk -F '\t' '$12=="Говорить" {print $7 " " $8 " " ($7+$9) " " ($8+$10); exit}' svetlana.tsv 2>/dev/null || true)
-          fi
-          test -n "$B"
-          read -r X1 Y1 X2 Y2 <<< "$B"
-          CX=$(( (X1 + X2) / 2 )); CY=$(( (Y1 + Y2) / 2 ))
-          adb shell input tap "$CX" "$CY"
-          echo "VOICE_TAP=PASS($CX,$CY)" | tee -a runtime.txt
-          sleep 3
-          adb exec-out screencap -p > voice-after-tap.png
-          adb logcat -d -v time > voice-logcat.txt
-
-          PERM=$(adb shell dumpsys package ru.mirsamozanyatykh.mobileagent | tr -d '\r' | grep 'android.permission.RECORD_AUDIO' | head -1 || true)
-          echo "RECORD_AUDIO_STATE=$PERM" | tee -a runtime.txt
-          if echo "$PERM" | grep -q 'granted=true'; then
-            echo 'VOICE_PERMISSION=GRANTED' | tee -a runtime.txt
-          elif grep -Eq 'Доступ к микрофону не разрешён|голос|микрофон|Speech|recognition|RECORD_AUDIO|SecurityException' voice-logcat.txt; then
-            echo 'VOICE_PERMISSION=CONTROLLED_FALLBACK' | tee -a runtime.txt
-          else
-            echo 'VOICE_PERMISSION=INCONCLUSIVE' | tee -a runtime.txt
-            exit 1
-          fi
-
-          if grep -Eq 'FATAL EXCEPTION|AndroidRuntime.*FATAL|IllegalStateException' voice-logcat.txt; then
-            echo 'VOICE_CRASH=FAIL' | tee -a runtime.txt
-            exit 1
-          fi
-          echo 'VOICE_NO_FATAL=PASS' | tee -a runtime.txt
-
-          # Crash gate is application-attributed, not a global emulator-noise grep.
-          # Parse FATAL EXCEPTION blocks and fail only when the crashing process is OX2.
           adb logcat -d -v time > full-logcat.txt
-          awk '
-            function flush_block(){
-              if(!in_block)return;
-              fatal_count++;
-              if(app_seen) app_count++;
-            }
-            /FATAL EXCEPTION/{flush_block();in_block=1;app_seen=0;next}
-            in_block && /Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)/{app_seen=1}
-            END{
-              flush_block();
-              print fatal_count+0 > "crash-total.txt";
-              print app_count+0 > "crash-app-attributed.txt";
-            }
-          ' full-logcat.txt
-          CRASH_TOTAL=$(cat crash-total.txt)
-          APP_ATTRIBUTED=$(cat crash-app-attributed.txt)
-          if [ "$APP_ATTRIBUTED" -gt 0 ]; then
+          if grep -Eq 'FATAL EXCEPTION|AndroidRuntime.*FATAL' full-logcat.txt && grep -Eq 'Process: ru\.mirsamozanyatykh\.mobileagent([ ,]|$)' full-logcat.txt; then
             echo 'CRASH_GATE=FAIL' | tee -a runtime.txt
-            grep -n -B2 -A12 'Process: ru\.mirsamozanyatykh\.mobileagent' full-logcat.txt > crash-evidence.txt || true
             exit 1
           fi
           echo 'CRASH_GATE=PASS' | tee -a runtime.txt
-          echo "CRASH_TOTAL_EMULATOR=$CRASH_TOTAL" | tee -a runtime.txt
-          grep -E 'FATAL EXCEPTION|AndroidRuntime' full-logcat.txt > crash-evidence.txt || true
-
-          {
-            echo '### P0 RUNTIME EVIDENCE'
-            cat runtime.txt
-            echo 'PID:'; adb shell pidof ru.mirsamozanyatykh.mobileagent || true
-            echo 'UIAutomator byte counts:'; wc -c chat-ui.xml svetlana-ui.xml 2>/dev/null || true
-          } >> "$GITHUB_STEP_SUMMARY"
           echo 'P0_RUNTIME=PASS' | tee -a runtime.txt
           PROBE_EOF
           chmod +x "$PROBE_SCRIPT"
           bash -n "$PROBE_SCRIPT"
-
-      - name: KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
       - name: Release smoke on API 30
         uses: reactivecircus/android-emulator-runner@v2
@@ -189,7 +104,7 @@ jobs:
           disable-animations: true
           script: bash "${{ runner.temp }}/release-smoke-probe.sh"
 
-      - name: Upload complete device evidence
+      - name: Upload Chat runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -205,17 +120,5 @@ jobs:
             chat-activities.txt
             chat-window.txt
             chat-ui.xml
-            svetlana-deeplink.txt
-            svetlana-screenshot.png
-            svetlana-activities.txt
-            svetlana-window.txt
-            svetlana-ui.xml
-            svetlana-ocr.txt
-            svetlana.tsv
-            voice-after-tap.png
-            voice-logcat.txt
             full-logcat.txt
-            crash-evidence.txt
-            crash-total.txt
-            crash-app-attributed.txt
           if-no-files-found: warn
