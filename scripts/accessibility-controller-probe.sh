@@ -2,7 +2,7 @@
 set -u
 ADB=adb
 PKG=ru.mirsamozanyatykh.mobileagent
-SERVICE="$PKG/com.beddatech.accessibilitycontroller.AccessibilityControllerService"
+SERVICE="$PKG/com.paulafanasyev.ox2.accessibility.OX2BeddaAccessibilityService"
 FAIL=0
 : > accessibility-controller-runtime.txt
 fail(){ echo "FAIL:$1 $2" | tee -a accessibility-controller-runtime.txt; FAIL=1; }
@@ -40,6 +40,7 @@ $ADB shell am force-stop "$PKG" || true
 if $ADB shell am start -W -a android.intent.action.VIEW -d 'mobile-agent:///accessibility-controller-smoke' -p "$PKG" > controller-launch.txt 2>&1; then pass H4_CONTROLLER_ROUTE reason=route_launch_command_succeeded; else fail H4_CONTROLLER_ROUTE reason=route_launch_failed; collect; exit 1; fi
 
 BOUND=0
+LIFECYCLE=0
 EVENT=0
 for _ in $(seq 1 45); do
   DUMP=$($ADB shell dumpsys accessibility 2>/dev/null | tr -d '\r' || true)
@@ -49,20 +50,17 @@ for _ in $(seq 1 45); do
      grep -Eq 'ACCESSIBILITY_CONTROLLER_RUNTIME service_bound=true tree_nodes=[1-9][0-9]*' controller-logcat.txt; then
     BOUND=1
   fi
+  if grep -q 'OX2BeddaAccessibility.*onServiceConnected called; instance set' controller-logcat.txt; then LIFECYCLE=1; fi
   if grep -q 'PASS:ACCESSIBILITY_CONTROLLER_TAP_VERIFIED' controller-logcat.txt; then EVENT=1; fi
-  [ "$BOUND" = 1 ] && [ "$EVENT" = 1 ] && break
+  [ "$BOUND" = 1 ] && [ "$LIFECYCLE" = 1 ] && [ "$EVENT" = 1 ] && break
   sleep 1
 done
 
 $ADB shell dumpsys accessibility > controller-accessibility-dump.txt 2>&1 || true
 $ADB logcat -d -v time > controller-logcat.txt 2>&1 || true
 
-if [ "$BOUND" = 1 ]; then
-  pass H5_ACCESSIBILITY_SERVICE_BIND reason=bound_service_and_nonempty_tree
-  echo 'ACCESSIBILITY_CONTROLLER_BIND=PASS' | tee -a accessibility-controller-runtime.txt
-else
-  fail H5_ACCESSIBILITY_SERVICE_BIND reason=bound_service_or_tree_proof_missing
-fi
+if [ "$BOUND" = 1 ]; then pass H5_ACCESSIBILITY_SERVICE_BIND reason=bound_service_and_nonempty_tree; echo 'ACCESSIBILITY_CONTROLLER_BIND=PASS' | tee -a accessibility-controller-runtime.txt; else fail H5_ACCESSIBILITY_SERVICE_BIND reason=bound_service_or_tree_proof_missing; fi
+if [ "$LIFECYCLE" = 1 ]; then pass H5A_SERVICE_LIFECYCLE reason=onServiceConnected_instance_set; echo 'ACCESSIBILITY_CONTROLLER_LIFECYCLE=PASS' | tee -a accessibility-controller-runtime.txt; else fail H5A_SERVICE_LIFECYCLE reason=onServiceConnected_marker_missing; fi
 if grep -q 'ACCESSIBILITY_CONTROLLER_SERVICE_ENABLED=true' controller-logcat.txt; then pass H6_SERVICE_STATUS reason=js_service_enabled_true; else fail H6_SERVICE_STATUS reason=js_service_enabled_marker_missing; fi
 if grep -q 'PASS:ACCESSIBILITY_CONTROLLER_TAP_VERIFIED' controller-logcat.txt; then pass H7_NATIVE_EVENT_AND_TAP reason=event_and_postcondition_verified; else fail H7_NATIVE_EVENT_AND_TAP reason=verified_tap_marker_missing; fi
 if grep -q 'ACCESSIBILITY_CONTROLLER_OPEN_SETTINGS=true' controller-logcat.txt; then pass H8_GLOBAL_OPEN_APP reason=settings_open_verified; else fail H8_GLOBAL_OPEN_APP reason=settings_open_marker_missing; fi
