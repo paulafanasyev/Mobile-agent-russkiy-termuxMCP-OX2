@@ -1,9 +1,9 @@
 const { withAndroidManifest } = require('@expo/config-plugins');
 
-const SERVICE_NAME = 'com.beddatech.accessibilitycontroller.AccessibilityControllerService';
+const SERVICE_NAME = 'com.paulafanasyev.ox2.accessibility.OX2BeddaAccessibilityService';
 const SERVICE_PERMISSION = 'android.permission.BIND_ACCESSIBILITY_SERVICE';
 
-module.exports = function withAccessibilityController(config) {
+module.exports = function withBeddaAccessibility(config) {
   return withAndroidManifest(config, (configWithManifest) => {
     const manifest = configWithManifest.modResults.manifest;
     const application = manifest.application?.[0];
@@ -35,7 +35,7 @@ module.exports = function withAccessibilityController(config) {
           {
             $: {
               'android:name': 'android.accessibilityservice',
-              'android:resource': '@xml/accessibility_service_config',
+              'android:resource': '@xml/bedda_accessibility_service_config',
             },
           },
         ],
