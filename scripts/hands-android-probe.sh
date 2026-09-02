@@ -19,10 +19,36 @@ ENABLED=''; STATE=''
 for _ in $(seq 1 20); do ENABLED=$($ADB shell settings get secure accessibility_enabled 2>/dev/null | tr -d '\r' || true); STATE=$($ADB shell settings get secure enabled_accessibility_services 2>/dev/null | tr -d '\r' || true); [ "$ENABLED" = 1 ] && echo "$STATE" | grep -Fq "$SERVICE" && break; $ADB shell settings put secure accessibility_enabled 1 >/dev/null 2>&1 || true; $ADB shell settings put secure enabled_accessibility_services "$SERVICE" >/dev/null 2>&1 || true; sleep 1; done
 if [ "$ENABLED" = 1 ]; then pass H3_ACCESSIBILITY_ENABLED reason=secure_setting_enabled; else fail H3_ACCESSIBILITY_ENABLED reason=secure_setting_not_enabled; fi
 if echo "$STATE" | grep -Fq "$SERVICE"; then pass H4_ACCESSIBILITY_SERVICE_ENABLED reason=service_listed; else fail H4_ACCESSIBILITY_SERVICE_ENABLED reason=service_not_listed; fi
-BOUND=0
-for _ in $(seq 1 30); do DUMP=$($ADB shell dumpsys accessibility 2>/dev/null | tr -d '\r' || true); if echo "$DUMP" | grep -Fq "$SERVICE"; then BOUND=1; break; fi; sleep 1; done
-if [ "$BOUND" = 1 ]; then pass H5_ACCESSIBILITY_SERVICE_BIND reason=service_present_in_dumpsys; echo 'ACCESSIBILITY_SERVICE_BIND=PASS' | tee -a hands-runtime.txt; else fail H5_ACCESSIBILITY_SERVICE_BIND reason=service_absent_from_dumpsys; collect; exit 1; fi
+# H5 is a runtime proof gate, not a static manifest/settings check. Start the
+# smoke route, then require dumpsys evidence of a bound service AND the native
+# smoke marker proving OX2AccessibilityService.instance plus a non-empty tree.
 $ADB logcat -c || true
+$ADB shell am force-stop "$PKG" || true
+$ADB shell am start -W -a android.intent.action.VIEW -d 'mobile-agent:///hands-smoke' -p "$PKG" > hands-h5-launch.txt 2>&1 || true
+BOUND=0
+RUNTIME=0
+for _ in $(seq 1 45); do
+  DUMP=$($ADB shell dumpsys accessibility 2>/dev/null | tr -d '\r' || true)
+  $ADB logcat -d -v time > hands-logcat.txt 2>&1 || true
+  if echo "$DUMP" | grep -Fq "$SERVICE" && \
+     echo "$DUMP" | grep -Eq 'Bound services:.*' && \
+     grep -Eq 'HANDS_ACCESSIBILITY_RUNTIME service_bound=true native_instance=true tree_nodes=[1-9][0-9]*' hands-logcat.txt; then
+    BOUND=1
+    RUNTIME=1
+    break
+  fi
+  sleep 1
+done
+$ADB shell dumpsys accessibility > hands-h5-dumpsys.txt 2>&1 || true
+$ADB logcat -d -v time > hands-logcat.txt 2>&1 || true
+if [ "$BOUND" = 1 ] && [ "$RUNTIME" = 1 ]; then
+  pass H5_ACCESSIBILITY_SERVICE_BIND reason=dumpsys_bound_and_native_instance_tree_proven
+  echo 'ACCESSIBILITY_SERVICE_BIND=PASS' | tee -a hands-runtime.txt
+else
+  fail H5_ACCESSIBILITY_SERVICE_BIND reason=runtime_bound_service_or_native_tree_proof_missing
+  collect
+  exit 1
+fi
 $ADB shell am force-stop "$PKG" || true
 if $ADB shell am start -W -a android.intent.action.VIEW -d 'mobile-agent:///hands-smoke' -p "$PKG" > hands-launch.txt 2>&1; then pass H6_OX2_HANDS_ROUTE reason=route_launch_command_succeeded; else fail H6_OX2_HANDS_ROUTE reason=route_launch_command_failed; collect; exit 1; fi
 for _ in $(seq 1 60); do $ADB logcat -d -v time > hands-logcat.txt 2>&1 || true; grep -q 'PASS:REAL_ACCESSIBILITY_TAP_VERIFIED' hands-logcat.txt && break; grep -q 'HANDS_EXCEPTION:' hands-logcat.txt && break; sleep 1; done
