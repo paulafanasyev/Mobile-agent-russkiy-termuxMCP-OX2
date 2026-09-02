@@ -13,10 +13,9 @@ describe('Hands native boundary', () => {
   it('does not publicly export native UI action executors', () => {
     const moduleSource = source('modules/accessibility-agent/index.ts')
 
-    // Read-only runtime evidence wrappers are intentionally public so the
-    // smoke probe can prove that the native service is actually bound and
-    // returning a live accessibility tree. Native action executors remain
-    // forbidden at this public module boundary.
+    // These are read-only runtime evidence wrappers and are intentionally
+    // public so the forensic smoke can prove a live native service/tree.
+    // Actual native UI action executors must remain behind the tool bridge.
     expect(moduleSource).not.toMatch(/export\s+(async\s+)?function\s+performAccessibilityAction\b/)
     expect(moduleSource).not.toMatch(/runApprovedAccessibilityAction|observeAccessibilityTree/)
   })
