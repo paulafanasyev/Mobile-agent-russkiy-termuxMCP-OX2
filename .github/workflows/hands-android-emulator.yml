@@ -94,10 +94,11 @@ jobs:
         run: |
           set +e
           echo "probe_outcome=${{ steps.hands_probe.outcome }}"
-          for f in hands-accessibility-dump.txt hands-logcat.txt hands-fatal.txt hands-runtime.txt hands-launch.txt hands-top.txt hands-target-pid.txt hands-activities-before.txt hands-window-before.txt hands-activities-after.txt hands-window-after.txt hands-ui-before.xml hands-ui-after.xml hands-before.png hands-after.png; do
+          for f in hands-accessibility-dump.txt hands-h5-dumpsys.txt hands-logcat.txt full-logcat.txt hands-fatal.txt hands-runtime.txt hands-h5-launch.txt hands-launch.txt hands-ox2-pid.txt hands-top.txt hands-target-pid.txt hands-activities-before.txt hands-window-before.txt hands-activities-after.txt hands-window-after.txt hands-ui-before.xml hands-ui-after.xml hands-before.png hands-after.png; do
             if [ -e "$f" ]; then echo "EVIDENCE_PRESENT=$f size=$(wc -c < "$f")"; else echo "EVIDENCE_MISSING=$f"; fi
           done
-          if [ -f hands-logcat.txt ]; then grep -E 'HANDS_|PASS:' hands-logcat.txt || true; fi
+          if [ -f hands-logcat.txt ]; then grep -E 'HANDS_|PASS:|OX2AccessibilityService' hands-logcat.txt || true; fi
+          if [ -f full-logcat.txt ]; then grep -E 'AccessibilityService|AccessibilityManagerService|HANDS_|OX2AccessibilityService' full-logcat.txt || true; fi
 
       - name: Upload Hands evidence
         if: always()
@@ -109,6 +110,9 @@ jobs:
             hands-apk-sha256.txt
             hands-runtime.txt
             hands-accessibility-dump.txt
+            hands-h5-dumpsys.txt
+            hands-h5-launch.txt
+            hands-ox2-pid.txt
             hands-launch.txt
             hands-top.txt
             hands-target-pid.txt
@@ -121,5 +125,6 @@ jobs:
             hands-before.png
             hands-after.png
             hands-logcat.txt
+            full-logcat.txt
             hands-fatal.txt
           if-no-files-found: warn
