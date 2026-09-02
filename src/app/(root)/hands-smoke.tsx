@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
-import { wrapToolsWithApproval } from "@/modules/runtime/tool-approval";
+import { setDeviceToolApprovalHandler } from "@/modules/runtime/tool-approval";
 import { createDeviceToolSet, isDeviceAppApproved } from "@/tools/bridge";
 import {
   isAccessibilityEnabled,
@@ -9,6 +9,10 @@ import {
 } from "accessibility-agent";
 
 type SmokeStatus = "idle" | "running" | "pass" | "fail";
+
+type ExecutableTool = {
+  execute?: (input: unknown, options?: unknown) => Promise<unknown>;
+};
 
 export default function HandsSmokeScreen() {
   const [status, setStatus] = useState<SmokeStatus>("idle");
@@ -52,18 +56,28 @@ export default function HandsSmokeScreen() {
         );
         log("H5_RUNTIME_BIND=PASS");
 
-        const deviceTools = createDeviceToolSet();
-        const tools = wrapToolsWithApproval(deviceTools, {
-          mode: "ask",
-          requestApproval: async (request) => {
-            log(`HANDS_APPROVAL_REQUESTED tool=${request.toolName}`);
-            log(`HANDS_APPROVAL_GRANTED tool=${request.toolName}`);
-            return "approve";
-          },
+        // Register exactly one approval bridge. Device tools themselves call
+        // requestDeviceToolApproval(), so wrapping the ToolSet here would cause
+        // a duplicate approval request for every Hands action.
+        setDeviceToolApprovalHandler(async (toolName, toolInput) => {
+          log(`HANDS_APPROVAL_REQUESTED tool=${toolName}`);
+          log(`HANDS_APPROVAL_GRANTED tool=${toolName}`);
+          return "approve";
         });
 
+        const deviceTools = createDeviceToolSet();
+        const executeTool = async (toolName: string, input: unknown) => {
+          const executable = deviceTools[toolName] as ExecutableTool | undefined;
+          if (!executable || typeof executable.execute !== "function") {
+            throw new Error(`Tool is not executable: ${toolName}`);
+          }
+          return executable.execute(input);
+        };
+
         log("HANDS_UI_OBSERVE_BEGIN");
-        const observed = await tools["device.ui.observe"]({ maxNodes: 200 });
+        const observed = (await executeTool("device.ui.observe", {
+          maxNodes: 200,
+        })) as any;
         log(`HANDS_UI_OBSERVE_RESULT nodes=${observed?.nodes?.length ?? 0}`);
         const target = observed?.nodes?.find(
           (node: any) =>
@@ -76,10 +90,10 @@ export default function HandsSmokeScreen() {
         log(`HANDS_REAL_TARGET_FOUND id=${target.id ?? "unknown"}`);
 
         log("HANDS_UI_ACT_BEGIN");
-        const acted = await tools["device.ui.act"]({
+        const acted = (await executeTool("device.ui.act", {
           action: "tap",
           nodeId: target.id,
-        });
+        })) as any;
         log(
           `HANDS_UI_ACT_RESULT status=${acted?.status ?? "unknown"} verified=${acted?.verified ?? false}`,
         );
@@ -89,7 +103,9 @@ export default function HandsSmokeScreen() {
         setActionExecuted(true);
         log("PASS:REAL_ACCESSIBILITY_TAP_VERIFIED");
 
-        const app = await tools["device.open_app"]({ packageName: "com.android.settings" });
+        const app = (await executeTool("device.open_app", {
+          packageName: "com.android.settings",
+        })) as any;
         if (!app?.launched_verified || app?.verified !== true) {
           throw new Error("Settings launch was not verified");
         }
@@ -104,6 +120,7 @@ export default function HandsSmokeScreen() {
         log(`HANDS_SMOKE_FAIL ${error instanceof Error ? error.message : String(error)}`);
         if (!cancelled) setStatus("fail");
       } finally {
+        setDeviceToolApprovalHandler(null);
         if (!cancelled) setEvidence([...logs]);
       }
     };
@@ -111,6 +128,7 @@ export default function HandsSmokeScreen() {
     void run();
     return () => {
       cancelled = true;
+      setDeviceToolApprovalHandler(null);
     };
   }, []);
 
