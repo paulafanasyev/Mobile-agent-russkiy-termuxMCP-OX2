@@ -17,7 +17,3 @@ android {
     versionName '2.1.1'
   }
 }
-
-dependencies {
-  implementation 'com.microsoft.cognitiveservices.speech:client-sdk:1.51.0'
-}
