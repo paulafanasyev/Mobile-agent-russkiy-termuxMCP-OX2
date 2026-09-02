@@ -33,9 +33,13 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Установить JavaScript-зависимости
+      - name: D0-A — подготовить детерминированный Bedda v1.4.0 vendor
+        run: bash scripts/vendor-bedda-v1.4.0.sh
+      - name: D0-B — проверить react-native-tts-kit 0.1.2
+        run: pnpm view react-native-tts-kit@0.1.2 version
+      - name: D1 — установить JavaScript-зависимости
         run: pnpm install --no-frozen-lockfile
-      - name: TypeScript typecheck
+      - name: D2 — TypeScript typecheck
         run: pnpm exec tsc --noEmit
       - name: Unit tests
         run: pnpm test
@@ -68,6 +72,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: D0-A — подготовить детерминированный Bedda v1.4.0 vendor
+        run: bash scripts/vendor-bedda-v1.4.0.sh
+      - name: D0-B — проверить react-native-tts-kit 0.1.2
+        run: pnpm view react-native-tts-kit@0.1.2 version
       - name: Android SDK и NDK
         uses: android-actions/setup-android@v4
         with:
@@ -131,10 +139,21 @@ jobs:
           EOF
           test -s "$MAVEN_DIR/libbox-1.0.0.aar"
           test -s "$MAVEN_DIR/libbox-1.0.0.pom"
-      - name: Установить JavaScript-зависимости
+      - name: D1 — установить JavaScript-зависимости
         run: pnpm install --no-frozen-lockfile
-      - name: Expo prebuild
+      - name: D3 — Expo prebuild
         run: pnpm exec expo prebuild --platform android --clean
+      - name: D4 — проверить New Architecture после prebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s android/gradle.properties
+          if grep -Eq '^newArchEnabled=' android/gradle.properties; then
+            grep -E '^newArchEnabled=' android/gradle.properties
+          else
+            echo 'newArchEnabled is absent; Expo SDK 57 default remains UNKNOWN until Gradle configuration is inspected.'
+          fi
+          grep -R 'newArchEnabled' android/gradle.properties android/settings.gradle android/build.gradle 2>/dev/null || true
       - name: Зафиксировать Android SDK и Gradle для Gradle/AGP совместимости
         shell: bash
         run: |
@@ -160,24 +179,34 @@ jobs:
           test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
           ./gradlew --version | tee "$RUNNER_TEMP/gradle-version.txt"
           grep -F 'Gradle 8.13' "$RUNNER_TEMP/gradle-version.txt"
-      - name: Настроить Gradle heap для большого APK (FIX#15-v2)
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat >> android/gradle.properties <<'PROPS'
-
-          # FIX#15-v2 (cycle 130): packaging OOM fix
-          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
-          org.gradle.workers.max=2
-          PROPS
-          tail -5 android/gradle.properties
-      - name: Собрать отладочный APK
+      - name: D5 — собрать отладочный APK
         id: assemble
         working-directory: android
         shell: bash
         run: |
           set -o pipefail
           ./gradlew assembleDebug --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-debug.log"
+      - name: D6 — проверить merged manifest Bedda AccessibilityService
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST='android/app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml'
+          if test -f "$MANIFEST"; then
+            grep -A12 -B3 'com.beddatech.accessibilitycontroller.AccessibilityControllerService' "$MANIFEST"
+          else
+            echo "Merged manifest not found at $MANIFEST"
+            find android/app/build/intermediates -name AndroidManifest.xml -print | head -20
+            exit 1
+          fi
+          test -f android/app/build/intermediates/merged_res/debug/mergeDebugResources/stripped.dir/xml/accessibility_service_config.xml || true
+      - name: D7 — проверить APK и AccessibilityService
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='android/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml | grep -A10 'AccessibilityControllerService'
+          unzip -l "$APK" | grep 'accessibility_service_config.xml'
       - name: Собрать release APK
         working-directory: android
         shell: bash
@@ -224,7 +253,7 @@ jobs:
           echo "libbox SHA256: $(cut -d' ' -f1 build/native/libbox.aar.sha256)"
           echo "Gradle: $(cd android && ./gradlew --version | grep '^Gradle ' || true)"
           echo "Preflight: SDK API 21/23/35/36 + NDK 28 + Maven libbox + AAR checksum + CommandServer проверены"
-          echo "Hands: react-native-accessibility-controller 1.4.0"
+          echo "Hands: vendored react-native-accessibility-controller v1.4.0"
           echo "Voice STT: expo-speech-recognition; offline Whisper remains a controlled integration target"
-          echo "Voice TTS: react-native-tts-kit 0.1.3 with expo-speech fallback"
+          echo "Voice TTS: react-native-tts-kit 0.1.2 with expo-speech fallback"
           echo "Release APK: android/app/build/outputs/apk/release/*.apk"
