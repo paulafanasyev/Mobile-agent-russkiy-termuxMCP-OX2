@@ -28,11 +28,12 @@ function getContract(id: string) {
 }
 
 async function approveHandsTool(toolName: string, toolInput: unknown): Promise<boolean> {
-  if (await isHandsAlwaysAllowed()) return true
-
+  const alwaysAllowed = await isHandsAlwaysAllowed()
   const decision = await requestDeviceToolApproval(toolName, toolInput)
   if (decision === 'abort') throw new Error('Request aborted.')
-  return decision === 'approve'
+  if (decision === 'approve') return true
+  if (decision === 'deny') return false
+  return alwaysAllowed
 }
 
 export function createDeviceToolSet(): ToolSet {
@@ -47,8 +48,6 @@ export function createDeviceToolSet(): ToolSet {
       inputSchema: getContract('device.open_app').inputSchema,
       execute: async (args) => {
         const parsed = openAppSchema.parse(args)
-        // A session approval is an explicit, package-scoped grant. Reuse it
-        // before falling back to the runtime approval prompt.
         const alreadyApproved = isAppApprovedForSession(parsed.packageName)
         if (!alreadyApproved && !(await approveHandsTool('device.open_app', parsed))) {
           return { status: 'needs_approval', packageName: parsed.packageName }
