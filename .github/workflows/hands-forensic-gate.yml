@@ -31,10 +31,12 @@ jobs:
           set -euo pipefail
           SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
           CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .conclusion)
+          MAIN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
           test "$CONCLUSION" = success
           test "$SHA" = "$(git rev-parse HEAD)"
+          test "$SHA" = "$MAIN_SHA"
           gh api "repos/$GITHUB_REPOSITORY/contents/src/app/(root)/hands-smoke.tsx?ref=$SHA" --jq .content | base64 -d | grep -Fq 'PASS:REAL_ACCESSIBILITY_TAP_VERIFIED'
-          printf 'source_run_id=%s\nsource_sha=%s\nsource_conclusion=%s\n' "$RUN_ID" "$SHA" "$CONCLUSION" | tee hands-provenance.txt
+          printf 'source_run_id=%s\nsource_sha=%s\nsource_conclusion=%s\nmain_sha=%s\n' "$RUN_ID" "$SHA" "$CONCLUSION" "$MAIN_SHA" | tee hands-provenance.txt
       - name: Download exact release APK
         env:
           GH_TOKEN: ${{ github.token }}
@@ -58,8 +60,9 @@ jobs:
           grep -Fq 'PASS:H1_INSTALL' scripts/hands-android-probe.sh
           grep -Fq 'PASS:H12_HANDS_NATIVE_INTENT_REQUESTED' scripts/hands-android-probe.sh
           grep -Fq 'PASS:REAL_ACCESSIBILITY_TAP_VERIFIED' scripts/hands-android-probe.sh
-          grep -Fq 'mResumedActivity' scripts/hands-android-probe.sh
+          grep -Eq 'mResumedActivity|topResumedActivity' scripts/hands-android-probe.sh
           grep -Fq 'full-logcat.txt' scripts/hands-android-probe.sh
+          grep -Fq 'adb-devices.txt' scripts/hands-android-probe.sh
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -78,16 +81,27 @@ jobs:
         if: always()
         run: |
           set -u
+          test -s adb-devices.txt || { echo 'FAIL:missing adb-devices.txt'; exit 1; }
+          grep -Eq '^emulator-5554[[:space:]]+device([[:space:]]|$)' adb-devices.txt || { echo 'FAIL:missing emulator-5554 device evidence'; exit 1; }
           test -s hands-runtime.txt || { echo 'FAIL:missing hands-runtime.txt'; exit 1; }
           for i in $(seq 1 12); do grep -Eq "^(PASS|FAIL):H${i}_" hands-runtime.txt || { echo "FAIL:missing H${i}"; exit 1; }; done
           grep -Fq 'PASS:H10_REAL_ACCESSIBILITY_TAP_VERIFIED' hands-runtime.txt || exit 1
           grep -Fq 'PASS:H11_HANDS_OPEN_APP_RESULT' hands-runtime.txt || exit 1
           grep -Fq 'PASS:H12_HANDS_NATIVE_INTENT_REQUESTED' hands-runtime.txt || exit 1
+          test -s hands-top.txt || exit 1
+          grep -Eq 'mResumedActivity|topResumedActivity' hands-top.txt || exit 1
           grep -Fq 'com.android.settings' hands-top.txt || exit 1
+          test -s hands-dumpsys.txt || exit 1
+          grep -Eq 'mResumedActivity|topResumedActivity' hands-dumpsys.txt || exit 1
+          grep -Fq 'com.android.settings' hands-dumpsys.txt || exit 1
           grep -Fq 'PASS:HANDS_RUNTIME=PASS' hands-runtime.txt 2>/dev/null || grep -Fq 'HANDS_RUNTIME=PASS' hands-runtime.txt || exit 1
           test ! -s hands-fatal.txt
           test -s full-logcat.txt
-          test -s hands-dumpsys.txt
+          test -s hands-ox2-pid.txt || exit 1
+          OX2_PID=$(head -n1 hands-ox2-pid.txt | tr -d '[:space:]')
+          test -n "$OX2_PID" || exit 1
+          if grep -E "[[:space:]]${OX2_PID}[[:space:]]" full-logcat.txt | grep -Eq 'FATAL EXCEPTION|AndroidRuntime|ANR'; then echo 'FAIL:OX2 PID has FATAL/ANR'; exit 1; fi
+          test -s hands-provenance.txt
       - name: Upload forensic Hands evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -97,6 +111,7 @@ jobs:
           path: |
             hands-provenance.txt
             hands-apk-sha256.txt
+            adb-devices.txt
             hands-runtime.txt
             hands-logcat.txt
             full-logcat.txt
@@ -105,6 +120,7 @@ jobs:
             hands-launch.txt
             hands-top.txt
             hands-target-pid.txt
+            hands-ox2-pid.txt
             hands-activities-before.txt
             hands-activities-after.txt
             hands-window-before.txt
