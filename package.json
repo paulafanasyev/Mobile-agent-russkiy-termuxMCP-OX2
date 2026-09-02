@@ -55,7 +55,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.0",
-    "react-native-accessibility-controller": "1.4.0",
+    "react-native-accessibility-controller": "file:./modules/react-native-accessibility-controller",
     "react-native-css-interop": "^0.2.6",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-get-random-values": "^1.11.0",
