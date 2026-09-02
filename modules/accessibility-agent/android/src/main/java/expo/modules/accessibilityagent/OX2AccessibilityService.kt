@@ -5,6 +5,7 @@ import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -12,6 +13,7 @@ class OX2AccessibilityService : AccessibilityService() {
   override fun onServiceConnected() {
     super.onServiceConnected()
     instance = this
+    Log.i(TAG, "OX2AccessibilityService.onServiceConnected")
   }
 
   override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
@@ -155,6 +157,7 @@ class OX2AccessibilityService : AccessibilityService() {
     x >= 0f && y >= 0f && x < width && y < height
 
   companion object {
+    private const val TAG = "OX2AccessibilityService"
     private const val MAX_TREE_NODES = 200
     private const val MAX_TEXT_LENGTH = 4096
     private val NODE_ID = Regex("^0(?:\\.[0-9]+)+$")
