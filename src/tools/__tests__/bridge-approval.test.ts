@@ -113,8 +113,9 @@ describe("device approval bridge", () => {
     expect(mocks.executeOpenApp).toHaveBeenCalledWith({ packageName: "com.example.app" });
   });
 
-  it("persistent Hands approval bypasses runtime approval", async () => {
+  it("persistent Hands approval still traverses the runtime approval bridge", async () => {
     mocks.isHandsAlwaysAllowed.mockResolvedValue(true);
+    mocks.requestDeviceToolApproval.mockResolvedValue("approve");
     mocks.executeOpenApp.mockResolvedValue({ status: "launched", packageName: "com.example.app" });
 
     const toolSet = createDeviceToolSet();
@@ -125,7 +126,9 @@ describe("device approval bridge", () => {
       { toolCallId: "bridge-approval-test-always", messages: [], context: {} },
     );
 
-    expect(mocks.requestDeviceToolApproval).not.toHaveBeenCalled();
+    expect(mocks.requestDeviceToolApproval).toHaveBeenCalledWith("device.open_app", {
+      packageName: "com.example.app",
+    });
     expect(mocks.executeOpenApp).toHaveBeenCalledWith({ packageName: "com.example.app" });
   });
 });
