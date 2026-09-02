@@ -17,8 +17,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  quality:
+    name: Quality Gate — TypeScript + unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Получить исходники
+        uses: actions/checkout@v5
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+          run_install: false
+      - name: Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Установить JavaScript-зависимости
+        run: pnpm install --no-frozen-lockfile
+      - name: TypeScript typecheck
+        run: pnpm exec tsc --noEmit
+      - name: Unit tests
+        run: pnpm test
+
   build-android:
     name: Сборка Android APK с реальным libbox
+    needs: quality
     runs-on: ubuntu-24.04
     steps:
       - name: Получить исходники
