@@ -14,7 +14,7 @@
         "NSAppTransportSecurity": {"NSAllowsLocalNetworking": true},
         "UIFileSharingEnabled": true,
         "LSSupportsOpeningDocumentsInPlace": true,
-        "NSMicrophoneUsageDescription": "Светлана использует микрофон для голосового общения с вами."
+        "NSMicrophoneUsageDescription": "Мобильный ИИ-агент использует микрофон для голосового управления."
       }
     },
     "android": {
