@@ -32,6 +32,29 @@ jobs:
         with:
           version: 10.29.2
           run_install: false
+      - name: Fetch pinned accessibility controller source
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO_URL='https://github.com/bedda-tech/react-native-accessibility-controller.git'
+          PIN='c6f4a8bd017fe504abedf7019b7690fda5004b82'
+          DEST='modules/react-native-accessibility-controller'
+          rm -rf "$DEST"
+          git clone "$REPO_URL" "$DEST"
+          git -C "$DEST" checkout --detach "$PIN"
+          test "$(git -C "$DEST" rev-parse HEAD)" = "$PIN"
+          node - "$DEST/package.json" <<'NODE'
+          const fs = require('fs');
+          const path = process.argv[2];
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          pkg.main = 'src/index.ts';
+          pkg.module = 'src/index.ts';
+          pkg.types = 'src/index.ts';
+          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+          test -f "$DEST/android/build.gradle"
+          test -f "$DEST/src/index.ts"
+          echo "ACCESSIBILITY_CONTROLLER_SOURCE_PIN=$PIN"
       - name: Java 17
         uses: actions/setup-java@v5
         with:
