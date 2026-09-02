@@ -1,0 +1,12 @@
+{
+  "name": "react-native-accessibility-controller",
+  "version": "1.4.0-ox2-legacy",
+  "description": "Forensic OX2 legacy-bridge fork of the bedda-tech accessibility controller.",
+  "main": "src/index.ts",
+  "source": "src/index.ts",
+  "files": ["src", "android"],
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-native": ">=0.74.0"
+  }
+}
