@@ -3,6 +3,10 @@ import { Pressable, Text, View } from "react-native";
 
 import { wrapToolsWithApproval } from "@/modules/runtime/tool-approval";
 import { createDeviceToolSet, isDeviceAppApproved } from "@/tools/bridge";
+import {
+  isAccessibilityEnabled,
+  getAccessibilityTree,
+} from "@/modules/accessibility-agent";
 
 type SmokeStatus = "idle" | "running" | "pass" | "fail";
 
@@ -25,11 +29,32 @@ export default function HandsSmokeScreen() {
         log("HANDS_SMOKE_START");
         log("H1_SMOKE_START=PASS");
 
+        // Runtime bind proof: settings registration alone is insufficient.
+        // Wait for the native AccessibilityService singleton and a real tree.
+        let runtimeTree: any[] = [];
+        let runtimeBound = false;
+        for (let attempt = 1; attempt <= 30; attempt += 1) {
+          try {
+            runtimeBound = await isAccessibilityEnabled();
+            if (runtimeBound) runtimeTree = await getAccessibilityTree(200);
+          } catch {
+            runtimeBound = false;
+            runtimeTree = [];
+          }
+          if (runtimeBound && runtimeTree.length > 0) break;
+          if (attempt < 30) await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        log(`HANDS_ACCESSIBILITY_RUNTIME service_bound=${String(runtimeBound)} native_instance=${String(runtimeBound)} tree_nodes=${runtimeTree.length}`);
+        if (!runtimeBound || runtimeTree.length === 0) {
+          throw new Error("AccessibilityService is not runtime-bound or returned an empty tree");
+        }
+
         const deviceTools = createDeviceToolSet();
         const wrapped = wrapToolsWithApproval(deviceTools, {
-          mode: "auto",
-          requestApproval: async () => {
-            log("HANDS_APPROVAL_GRANTED");
+          mode: "ask",
+          requestApproval: async (request) => {
+            log(`HANDS_APPROVAL_REQUESTED tool=${request.toolName}`);
+            log(`HANDS_APPROVAL_GRANTED tool=${request.toolName}`);
             return "approve";
           },
         });
@@ -42,6 +67,7 @@ export default function HandsSmokeScreen() {
           throw new Error("Accessibility Hands tools are not executable");
         }
 
+        log("HANDS_UI_OBSERVE_BEGIN");
         let observed: any = null;
         for (let attempt = 1; attempt <= 30; attempt += 1) {
           observed = await observe.execute(
@@ -58,10 +84,12 @@ export default function HandsSmokeScreen() {
           n.clickable && (n.text === "HANDS_REAL_ACTION_TARGET" || n.contentDescription === "HANDS_REAL_ACTION_TARGET");
         const target = observed.nodes?.find(isTarget);
         if (!target) throw new Error("Real accessibility UI target was not observed");
+        log(`HANDS_REAL_TARGET_FOUND text=${String(target.text ?? target.contentDescription ?? "")}`);
         const bounds = target.bounds;
         const x = (bounds.left + bounds.right) / 2;
         const y = (bounds.top + bounds.bottom) / 2;
 
+        log("HANDS_UI_ACT_BEGIN");
         const result = await act.execute(
           { action: { type: "tap", x, y }, waitMs: 500, expectedText: "HANDS_ACTION_EXECUTED" },
           { toolCallId: "hands-act", messages: [], context: {} },
