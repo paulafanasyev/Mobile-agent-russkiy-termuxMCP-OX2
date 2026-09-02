@@ -1,4 +1,8 @@
-import { nativeIsAccessibilityEnabled, nativeOpenAccessibilitySettings } from './native'
+import {
+  nativeForensicLog,
+  nativeIsAccessibilityEnabled,
+  nativeOpenAccessibilitySettings,
+} from './native'
 
 export const HANDS_MAX_TREE_NODES = 200
 export const HANDS_MAX_TEXT_LENGTH = 4096
@@ -13,6 +17,10 @@ export type AccessibilityNode = {
   editable: boolean
   enabled: boolean
   bounds: { left: number; top: number; right: number; bottom: number }
+}
+
+export async function forensicLog(message: string): Promise<void> {
+  await nativeForensicLog(message)
 }
 
 export async function isAccessibilityEnabled(): Promise<boolean> {
