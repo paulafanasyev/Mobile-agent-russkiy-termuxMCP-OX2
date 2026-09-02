@@ -2,6 +2,7 @@ package expo.modules.accessibilityagent
 
 import android.content.Intent
 import android.provider.Settings
+import android.util.Log
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.json.JSONObject
@@ -11,7 +12,14 @@ class AccessibilityAgentModule : Module() {
     Name("AccessibilityAgent")
 
     AsyncFunction("isEnabled") {
-      OX2AccessibilityService.instance != null
+      val enabled = OX2AccessibilityService.instance != null
+      Log.i(TAG, "LOG:HANDS_NATIVE_IS_ENABLED_RESULT enabled=$enabled")
+      enabled
+    }
+
+    AsyncFunction("forensicLog") { message: String ->
+      Log.i(TAG, message.take(1000))
+      true
     }
 
     AsyncFunction("openAccessibilitySettings") {
@@ -24,32 +32,42 @@ class AccessibilityAgentModule : Module() {
     }
 
     AsyncFunction("getTree") { maxNodes: Int ->
-      OX2AccessibilityService.instance?.snapshot(maxNodes.coerceIn(1, HANDS_MAX_TREE_NODES))
+      Log.i(TAG, "LOG:HANDS_NATIVE_GET_TREE_START maxNodes=$maxNodes service=${OX2AccessibilityService.instance != null}")
+      val result = OX2AccessibilityService.instance
+        ?.snapshot(maxNodes.coerceIn(1, HANDS_MAX_TREE_NODES))
         ?: emptyList<Map<String, Any?>>()
+      Log.i(TAG, "LOG:HANDS_NATIVE_GET_TREE_RESULT nodes=${result.size}")
+      result
     }
 
     AsyncFunction("perform") { actionJson: String ->
+      Log.i(TAG, "LOG:HANDS_NATIVE_PERFORM_START payloadLength=${actionJson.length}")
       val service = OX2AccessibilityService.instance
         ?: return@AsyncFunction mapOf("status" to "accessibility_disabled", "action" to "unknown")
 
       val json = try {
         JSONObject(actionJson)
       } catch (_: Exception) {
+        Log.i(TAG, "LOG:HANDS_NATIVE_PERFORM_RESULT status=invalid_json")
         return@AsyncFunction mapOf("status" to "invalid_json", "action" to "unknown")
       }
 
       val type = json.optString("type", "")
       if (type !in SUPPORTED_ACTIONS) {
+        Log.i(TAG, "LOG:HANDS_NATIVE_PERFORM_RESULT status=unsupported action=$type")
         return@AsyncFunction mapOf("status" to "unsupported", "action" to type.ifBlank { "unknown" })
       }
 
       if (!validateAction(json, type, service)) {
+        Log.i(TAG, "LOG:HANDS_NATIVE_PERFORM_RESULT status=invalid_action action=$type")
         return@AsyncFunction mapOf("status" to "invalid_action", "action" to type)
       }
 
       val action = mutableMapOf<String, Any?>()
       json.keys().forEach { key -> action[key] = json.get(key) }
-      mapOf("status" to service.perform(action), "action" to type)
+      val status = service.perform(action)
+      Log.i(TAG, "LOG:HANDS_NATIVE_PERFORM_RESULT status=$status action=$type")
+      mapOf("status" to status, "action" to type)
     }
   }
 
@@ -84,6 +102,7 @@ class AccessibilityAgentModule : Module() {
   }
 
   companion object {
+    private const val TAG = "OX2Hands"
     private const val HANDS_MAX_TREE_NODES = 200
     private const val HANDS_MAX_TEXT_LENGTH = 4096
     private val SUPPORTED_ACTIONS = setOf("back", "home", "recents", "tap", "long_press", "swipe", "type")

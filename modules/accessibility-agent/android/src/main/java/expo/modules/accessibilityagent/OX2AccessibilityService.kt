@@ -5,6 +5,7 @@ import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -12,6 +13,7 @@ class OX2AccessibilityService : AccessibilityService() {
   override fun onServiceConnected() {
     super.onServiceConnected()
     instance = this
+    Log.i(TAG, "LOG:HANDS_SERVICE_CONNECTED package=$packageName")
   }
 
   override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
@@ -19,17 +21,26 @@ class OX2AccessibilityService : AccessibilityService() {
   override fun onInterrupt() = Unit
 
   override fun onDestroy() {
+    Log.i(TAG, "LOG:HANDS_SERVICE_DESTROYED")
     if (instance === this) instance = null
     super.onDestroy()
   }
 
   fun snapshot(maxNodes: Int): List<Map<String, Any?>> {
     val limit = maxNodes.coerceIn(1, MAX_TREE_NODES)
-    val root = rootInActiveWindow ?: return emptyList()
+    val root = rootInActiveWindow
+    if (root == null) {
+      Log.i(TAG, "LOG:HANDS_SERVICE_SNAPSHOT root=null")
+      return emptyList()
+    }
     return try {
       val out = ArrayList<Map<String, Any?>>(limit)
       walk(root, "0", limit, out)
+      Log.i(TAG, "LOG:HANDS_SERVICE_SNAPSHOT rootPackage=${out.firstOrNull()?.get("packageName")} nodes=${out.size}")
       out
+    } catch (error: RuntimeException) {
+      Log.e(TAG, "LOG:HANDS_SERVICE_SNAPSHOT_EXCEPTION ${error.javaClass.simpleName}:${error.message}", error)
+      throw error
     } finally {
       root.recycle()
     }
@@ -68,15 +79,20 @@ class OX2AccessibilityService : AccessibilityService() {
 
   fun perform(action: Map<String, Any?>): String {
     val type = action["type"] as? String ?: return "invalid_action"
-    return when (type) {
-      "back" -> if (performGlobalAction(GLOBAL_ACTION_BACK)) "executed" else "failed"
-      "home" -> if (performGlobalAction(GLOBAL_ACTION_HOME)) "executed" else "failed"
-      "recents" -> if (performGlobalAction(GLOBAL_ACTION_RECENTS)) "executed" else "failed"
-      "tap" -> gesture(action, false)
-      "long_press" -> gesture(action, true)
-      "swipe" -> gesture(action, false)
-      "type" -> typeText(action)
-      else -> "unsupported"
+    Log.i(TAG, "LOG:HANDS_SERVICE_PERFORM_START action=$type")
+    return try {
+      when (type) {
+        "back" -> if (performGlobalAction(GLOBAL_ACTION_BACK)) "executed" else "failed"
+        "home" -> if (performGlobalAction(GLOBAL_ACTION_HOME)) "executed" else "failed"
+        "recents" -> if (performGlobalAction(GLOBAL_ACTION_RECENTS)) "executed" else "failed"
+        "tap" -> gesture(action, false)
+        "long_press" -> gesture(action, true)
+        "swipe" -> gesture(action, false)
+        "type" -> typeText(action)
+        else -> "unsupported"
+      }
+    } finally {
+      Log.i(TAG, "LOG:HANDS_SERVICE_PERFORM_END action=$type")
     }
   }
 
@@ -147,14 +163,18 @@ class OX2AccessibilityService : AccessibilityService() {
     } else {
       ((action["durationMs"] as? Number)?.toLong() ?: 250L).coerceIn(50L, 2000L)
     }
+    Log.i(TAG, "LOG:HANDS_SERVICE_GESTURE_REQUEST type=${action["type"]} x=$x y=$y durationMs=$duration")
     val stroke = GestureDescription.StrokeDescription(path, 0, duration)
-    return if (dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)) "executed" else "failed"
+    val accepted = dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+    Log.i(TAG, "LOG:HANDS_SERVICE_GESTURE_DISPATCH accepted=$accepted type=${action["type"]}")
+    return if (accepted) "executed" else "failed"
   }
 
   private fun isInsideScreen(x: Float, y: Float, width: Float, height: Float): Boolean =
     x >= 0f && y >= 0f && x < width && y < height
 
   companion object {
+    private const val TAG = "OX2Hands"
     private const val MAX_TREE_NODES = 200
     private const val MAX_TEXT_LENGTH = 4096
     private val NODE_ID = Regex("^0(?:\\.[0-9]+)+$")

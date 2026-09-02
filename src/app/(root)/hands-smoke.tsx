@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
+import { forensicLog } from "accessibility-agent";
 import { wrapToolsWithApproval } from "@/modules/runtime/tool-approval";
 import { createDeviceToolSet, isDeviceAppApproved } from "@/tools/bridge";
 
@@ -14,23 +15,24 @@ export default function HandsSmokeScreen() {
   useEffect(() => {
     let cancelled = false;
     const logs: string[] = [];
-    const log = (message: string) => {
+    const log = async (message: string) => {
       logs.push(message);
       console.log(message);
+      await forensicLog(message);
     };
 
     const run = async () => {
       try {
         setStatus("running");
-        log("HANDS_SMOKE_START");
+        await log("HANDS_SMOKE_START");
 
         const deviceTools = createDeviceToolSet();
         const wrapped = wrapToolsWithApproval(deviceTools, {
           mode: "auto",
           requestApproval: async () => "approve",
         });
-        log("HANDS_TOOLSET_CREATED");
-        log("HANDS_APPROVAL_HANDLER_SET");
+        await log("HANDS_TOOLSET_CREATED");
+        await log("HANDS_APPROVAL_HANDLER_SET");
 
         const observe = wrapped["device.ui.observe"];
         const act = wrapped["device.ui.act"];
@@ -50,7 +52,7 @@ export default function HandsSmokeScreen() {
           if (observed?.status === "observed") break;
           if (attempt < 30) await new Promise((resolve) => setTimeout(resolve, 500));
         }
-        log(`HANDS_UI_OBSERVE_RESULT status=${String(observed?.status)} nodes=${String(observed?.nodes?.length ?? 0)}`);
+        await log(`HANDS_UI_OBSERVE_RESULT status=${String(observed?.status)} nodes=${String(observed?.nodes?.length ?? 0)}`);
         const isTarget = (n: any) =>
           n.clickable && (n.text === "HANDS_REAL_ACTION_TARGET" || n.contentDescription === "HANDS_REAL_ACTION_TARGET");
         if (observed?.status !== "observed" || !observed.nodes?.some(isTarget)) {
@@ -71,12 +73,12 @@ export default function HandsSmokeScreen() {
           },
           { toolCallId: "hands-act", messages: [], context: {} },
         );
-        log(`HANDS_UI_ACT_RESULT status=${String(result?.status)} verified=${String(result?.verified)}`);
+        await log(`HANDS_UI_ACT_RESULT status=${String(result?.status)} verified=${String(result?.verified)}`);
         if (result?.status !== "verified" || result?.verified !== true) {
           throw new Error(`Real accessibility tap was not causally verified: ${JSON.stringify(result)}`);
         }
 
-        log("PASS:REAL_ACCESSIBILITY_TAP_VERIFIED");
+        await log("PASS:REAL_ACCESSIBILITY_TAP_VERIFIED");
 
         const openAppTool = wrapped["device.open_app"];
         if (!openAppTool?.execute) throw new Error("device.open_app is not executable");
@@ -84,9 +86,9 @@ export default function HandsSmokeScreen() {
           { packageName: "com.android.settings" },
           { toolCallId: "hands-open-app", messages: [], context: {} },
         );
-        log(`HANDS_OPEN_APP_RESULT status=${String(openResult?.status)}`);
+        await log(`HANDS_OPEN_APP_RESULT status=${String(openResult?.status)}`);
         const approved = isDeviceAppApproved("com.android.settings");
-        log(`HANDS_SESSION_APPROVED=${String(approved)} package=com.android.settings`);
+        await log(`HANDS_SESSION_APPROVED=${String(approved)} package=com.android.settings`);
         if (
           openResult?.status !== "launched_verified" ||
           openResult?.packageName !== "com.android.settings" ||
@@ -95,8 +97,8 @@ export default function HandsSmokeScreen() {
         ) {
           throw new Error(`Unexpected open-app result/approval: ${JSON.stringify(openResult)}`);
         }
-        log("HANDS_NATIVE_INTENT_REQUESTED package=com.android.settings");
-        log("PASS:DEVICE_OPEN_APP_LAUNCHED_VERIFIED");
+        await log("HANDS_NATIVE_INTENT_REQUESTED package=com.android.settings");
+        await log("PASS:DEVICE_OPEN_APP_LAUNCHED_VERIFIED");
 
         if (!cancelled) {
           setEvidence([...logs]);
@@ -104,7 +106,7 @@ export default function HandsSmokeScreen() {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        log(`HANDS_EXCEPTION: ${message}`);
+        await log(`HANDS_EXCEPTION: ${message}`);
         if (!cancelled) {
           setEvidence([...logs]);
           setStatus("fail");

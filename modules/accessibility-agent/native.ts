@@ -10,6 +10,7 @@ export type NativeAccessibilityResult = {
 
 type NativeAccessibilityAgent = {
   isEnabled(): Promise<boolean>
+  forensicLog(message: string): Promise<boolean>
   openAccessibilitySettings(): Promise<boolean>
   getTree(maxNodes: number): Promise<AccessibilityNode[]>
   perform(actionJson: string): Promise<NativeAccessibilityResult>
@@ -18,6 +19,15 @@ type NativeAccessibilityAgent = {
 const Native = Platform.OS === 'android'
   ? requireNativeModule<NativeAccessibilityAgent>('AccessibilityAgent')
   : null
+
+export async function nativeForensicLog(message: string): Promise<void> {
+  if (!Native) return
+  try {
+    await Native.forensicLog(message)
+  } catch {
+    // Forensic logging must never change production Hands behavior.
+  }
+}
 
 export async function nativeIsAccessibilityEnabled(): Promise<boolean> {
   if (!Native) return false
