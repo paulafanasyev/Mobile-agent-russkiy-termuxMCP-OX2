@@ -49,6 +49,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-speech-recognition",
       ["expo-build-properties", {
         "android": {
           "minSdkVersion": 26,
