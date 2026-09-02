@@ -63,25 +63,20 @@ export async function openAccessibilitySettings(): Promise<boolean> {
 
 export async function performAccessibilityAction(action: any): Promise<{ status: string; action: string }> {
   try {
+    let ok = false
     switch (action.type) {
-      case 'back': await globalAction('back'); break
-      case 'home': await globalAction('home'); break
-      case 'recents': await globalAction('recents'); break
-      case 'tap':
-        if (action.nodeId) await tapNode(action.nodeId)
-        else await tap(action.x, action.y)
-        break
-      case 'long_press':
-        if (action.nodeId) await longPressNode(action.nodeId)
-        else await longPress(action.x, action.y)
-        break
-      case 'swipe': await swipe(action.x, action.y, action.x2, action.y2, action.durationMs ?? 300); break
-      case 'type': await setNodeText(action.nodeId, String(action.text ?? '')); break
-      case 'scroll': await scrollNode(action.nodeId, action.direction ?? 'down'); break
-      case 'open_app': await openApp(action.packageName); break
+      case 'back': ok = await globalAction('back'); break
+      case 'home': ok = await globalAction('home'); break
+      case 'recents': ok = await globalAction('recents'); break
+      case 'tap': ok = action.nodeId ? await tapNode(action.nodeId) : await tap(action.x, action.y); break
+      case 'long_press': ok = action.nodeId ? await longPressNode(action.nodeId) : await longPress(action.x, action.y); break
+      case 'swipe': ok = await swipe(action.x, action.y, action.x2, action.y2, action.durationMs ?? 300); break
+      case 'type': ok = await setNodeText(action.nodeId, String(action.text ?? '')); break
+      case 'scroll': ok = await scrollNode(action.nodeId, action.direction ?? 'down'); break
+      case 'open_app': ok = await openApp(action.packageName); break
       default: return { status: 'unsupported', action: String(action.type ?? 'unknown') }
     }
-    return { status: 'verified', action: String(action.type) }
+    return { status: ok ? 'verified' : 'failed', action: String(action.type) }
   } catch {
     return { status: 'failed', action: String(action.type ?? 'unknown') }
   }
