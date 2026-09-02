@@ -7,7 +7,9 @@ FAIL=0
 : > hands-runtime.txt
 fail(){ echo "FAIL:$1 $2" | tee -a hands-runtime.txt; FAIL=1; }
 pass(){ echo "PASS:$1 $2" | tee -a hands-runtime.txt; }
-collect(){ $ADB shell dumpsys accessibility > hands-accessibility-dump.txt 2>&1 || true; $ADB shell dumpsys activity activities > hands-activities-failure.txt 2>&1 || true; $ADB shell dumpsys window > hands-window-failure.txt 2>&1 || true; $ADB logcat -d -v time > hands-logcat.txt 2>&1 || true; cp hands-logcat.txt full-logcat.txt 2>/dev/null || true; }
+collect(){ $ADB devices -l > adb-devices.txt 2>&1 || true; $ADB shell dumpsys accessibility > hands-accessibility-dump.txt 2>&1 || true; $ADB shell dumpsys activity activities > hands-activities-failure.txt 2>&1 || true; $ADB shell dumpsys window > hands-window-failure.txt 2>&1 || true; $ADB logcat -d -v time > hands-logcat.txt 2>&1 || true; cp hands-logcat.txt full-logcat.txt 2>/dev/null || true; }
+$ADB devices -l > adb-devices.txt 2>&1 || true
+if grep -Eq '^emulator-5554[[:space:]]+device([[:space:]]|$)' adb-devices.txt; then pass H0_ADB_DEVICE reason=emulator_5554_device; else fail H0_ADB_DEVICE reason=emulator_5554_not_ready; collect; exit 1; fi
 if $ADB install -r "$GITHUB_WORKSPACE/hands-smoke.apk"; then pass H1_INSTALL reason=apk_installed; else fail H1_INSTALL reason=apk_install_failed; collect; exit 1; fi
 $ADB shell pm grant "$PKG" android.permission.RECORD_AUDIO >/dev/null 2>&1 || true
 if $ADB shell dumpsys package "$PKG" | tr -d '\r' | grep -Fq 'android.permission.RECORD_AUDIO'; then pass H2_RECORD_AUDIO reason=permission_present; else fail H2_RECORD_AUDIO reason=permission_missing; fi
@@ -26,6 +28,7 @@ if $ADB shell am start -W -a android.intent.action.VIEW -d 'mobile-agent:///hand
 for _ in $(seq 1 60); do $ADB logcat -d -v time > hands-logcat.txt 2>&1 || true; grep -q 'PASS:REAL_ACCESSIBILITY_TAP_VERIFIED' hands-logcat.txt && break; grep -q 'HANDS_EXCEPTION:' hands-logcat.txt && break; sleep 1; done
 $ADB logcat -d -v time > hands-logcat.txt 2>&1 || true
 cp hands-logcat.txt full-logcat.txt 2>/dev/null || true
+$ADB shell pidof "$PKG" | tr -d '\r' > hands-ox2-pid.txt 2>/dev/null || true
 grep -q 'HANDS_SMOKE_START' hands-logcat.txt && pass H7_HANDS_SMOKE_START reason=marker_present || fail H7_HANDS_SMOKE_START reason=marker_missing
 grep -q 'HANDS_TOOLSET_CREATED' hands-logcat.txt && pass H8_HANDS_TOOLSET_CREATED reason=marker_present || fail H8_HANDS_TOOLSET_CREATED reason=marker_missing
 grep -q 'HANDS_APPROVAL_GRANTED' hands-logcat.txt && pass H9_HANDS_APPROVAL_GRANTED reason=approval_marker_present || fail H9_HANDS_APPROVAL_GRANTED reason=approval_marker_missing
