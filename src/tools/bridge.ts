@@ -28,11 +28,17 @@ function getContract(id: string) {
 }
 
 async function approveHandsTool(toolName: string, toolInput: unknown): Promise<boolean> {
-  if (await isHandsAlwaysAllowed()) return true
-
+  // Persistent Hands permission means "no user UI prompt", not "bypass the
+  // approval bridge". If a bridge handler is installed (including the smoke
+  // harness), it must still be traversed. In production without a handler,
+  // the persistent grant remains the fallback.
+  const alwaysAllowed = await isHandsAlwaysAllowed()
   const decision = await requestDeviceToolApproval(toolName, toolInput)
+
   if (decision === 'abort') throw new Error('Request aborted.')
-  return decision === 'approve'
+  if (decision === 'approve') return true
+  if (decision === 'deny') return false
+  return alwaysAllowed
 }
 
 export function createDeviceToolSet(): ToolSet {
@@ -59,7 +65,7 @@ export function createDeviceToolSet(): ToolSet {
     }),
     'device.files.read': tool({
       description: getContract('device.files.read').description,
-      inputSchema: getContract('device.files.read').inputSchema,
+      inputSchema: readFileSchema,
       execute: async (args) => executeFileRead(readFileSchema.parse(args)),
     }),
     'device.ui.observe': tool({
