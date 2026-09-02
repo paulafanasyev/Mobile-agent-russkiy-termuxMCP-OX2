@@ -3,19 +3,25 @@ import { Platform } from "react-native";
 import * as Speech from "expo-speech";
 import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
 
-export type SvetlanaVoiceCapabilities = {
-  supported: boolean;
-  offlinePreferred: boolean;
+export type VoiceCapabilities = {
+  recognitionAvailable: boolean;
+  onDeviceRecognitionSupported: boolean;
   ttsAvailable: boolean;
   language: string;
 };
 
 let listening = false;
 
-export const SvetlanaVoice = {
-  capabilities: async (): Promise<SvetlanaVoiceCapabilities> => ({
-    supported: Platform.OS === "android" ? ExpoSpeechRecognitionModule.isRecognitionAvailable() : true,
-    offlinePreferred: Platform.OS === "android",
+export const MobileAgentVoice = {
+  capabilities: async (): Promise<VoiceCapabilities> => ({
+    recognitionAvailable:
+      Platform.OS === "android"
+        ? ExpoSpeechRecognitionModule.isRecognitionAvailable()
+        : false,
+    onDeviceRecognitionSupported:
+      Platform.OS === "android"
+        ? ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()
+        : false,
     ttsAvailable: true,
     language: "ru-RU",
   }),
@@ -31,20 +37,29 @@ export const SvetlanaVoice = {
         const text = event?.results?.[0]?.transcript?.trim?.() ?? "";
         if (event?.isFinal && text && !settled) {
           settled = true;
-          resultSub.remove(); errorSub.remove(); endSub.remove(); listening = false;
+          resultSub.remove();
+          errorSub.remove();
+          endSub.remove();
+          listening = false;
           resolve(text);
         }
       });
       const errorSub = ExpoSpeechRecognitionModule.addListener("error", (event: any) => {
         if (settled) return;
         settled = true;
-        resultSub.remove(); errorSub.remove(); endSub.remove(); listening = false;
+        resultSub.remove();
+        errorSub.remove();
+        endSub.remove();
+        listening = false;
         reject(new Error(event?.message || `Speech recognition error: ${event?.error ?? "unknown"}`));
       });
       const endSub = ExpoSpeechRecognitionModule.addListener("end", () => {
         if (settled) return;
         settled = true;
-        resultSub.remove(); errorSub.remove(); endSub.remove(); listening = false;
+        resultSub.remove();
+        errorSub.remove();
+        endSub.remove();
+        listening = false;
         reject(new Error("Распознавание речи завершилось без результата"));
       });
 
@@ -53,6 +68,8 @@ export const SvetlanaVoice = {
         lang: "ru-RU",
         interimResults: true,
         maxAlternatives: 1,
+        // Network/system recognition remains the compatibility path on Android 12/API 30.
+        // Strict on-device mode will be enabled only after an installed ru-RU offline model is verified.
         requiresOnDeviceRecognition: false,
       });
     });
