@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
-import { forensicLog } from "@/modules/accessibility-agent";
+import { forensicLog } from "accessibility-agent";
 import { wrapToolsWithApproval } from "@/modules/runtime/tool-approval";
 import { createDeviceToolSet, isDeviceAppApproved } from "@/tools/bridge";
 
