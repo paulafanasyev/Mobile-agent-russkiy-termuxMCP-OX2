@@ -1,0 +1,211 @@
+name: Bedda Forensic Gates
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [forensic/bedda-d0-d11]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: D0-D7 Bedda gates
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Go 1.24.7
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.7'
+          cache: false
+      - name: pnpm 10.29.2
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+          run_install: false
+      - name: Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: D0-A — committed vendor only
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENDOR="$GITHUB_WORKSPACE/vendor/react-native-accessibility-controller"
+          test -f "$VENDOR/package.json"
+          test -f "$VENDOR/src/index.ts"
+          test -f "$VENDOR/src/NativeAccessibilityController.ts"
+          test -f "$VENDOR/src/types.ts"
+          test -f "$VENDOR/android/build.gradle"
+          test -f "$VENDOR/android/src/main/AndroidManifest.xml"
+          test -f "$VENDOR/android/src/main/res/xml/accessibility_service_config.xml"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/AccessibilityControllerService.kt"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/AccessibilityControllerModule.kt"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/ScreenReader.kt"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/ActionDispatcher.kt"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/GestureDispatcher.kt"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/OverlayManager.kt"
+          node - "$VENDOR/package.json" <<'NODE'
+          const fs=require('fs'); const p=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          for (const k of ['main','module','types']) if (p[k] !== 'src/index.ts') throw new Error(`${k}=${p[k]}`);
+          if (p.name !== 'react-native-accessibility-controller' || p.version !== '1.4.0') throw new Error('wrong package identity');
+          console.log(JSON.stringify({name:p.name,version:p.version,main:p.main,module:p.module,types:p.types}));
+          NODE
+      - name: D0-B — verify tts-kit 0.1.2
+        run: pnpm view react-native-tts-kit@0.1.2 version
+      - name: Android SDK/NDK for reproducible libbox
+        uses: android-actions/setup-android@v4
+      - name: Install Android SDK/NDK required by libbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?ANDROID_HOME absent}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null 2>&1 || true
+          sdkmanager --sdk_root="$ANDROID_HOME" --install "platform-tools" "platforms;android-21" "platforms;android-23" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" "ndk;28.0.13004108"
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/28.0.13004108"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
+          test -f "$ANDROID_HOME/platforms/android-21/android.jar"
+          test -f "$ANDROID_HOME/platforms/android-23/android.jar"
+          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+          test -x "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+      - name: D0-C — build reproducible libbox AAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/build-libbox-android.sh 2>&1 | tee "$RUNNER_TEMP/libbox-build.log"
+      - name: D0-C verify — libbox provenance and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/native/libbox.aar
+          test -s build/native/libbox.aar.sha256
+          test -s build/native/sing-box-revision.txt
+          sha256sum -c build/native/libbox.aar.sha256
+          test "$(cat build/native/sing-box-revision.txt)" = "670d7a7693918b765a17c44aee5afb5d47ead390"
+          unzip -t build/native/libbox.aar >/dev/null
+      - name: D0-C — expose libbox as local Maven module
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAVEN_DIR="build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0"
+          mkdir -p "$MAVEN_DIR"
+          cp build/native/libbox.aar "$MAVEN_DIR/libbox-1.0.0.aar"
+          cat > "$MAVEN_DIR/libbox-1.0.0.pom" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>ru.mirsamozanyatykh</groupId>
+            <artifactId>libbox</artifactId>
+            <version>1.0.0</version>
+            <packaging>aar</packaging>
+          </project>
+          EOF
+          test -s "$MAVEN_DIR/libbox-1.0.0.aar"
+          test -s "$MAVEN_DIR/libbox-1.0.0.pom"
+      - name: D1 — install JavaScript dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: D1 verify — resolved Bedda package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENDOR="$GITHUB_WORKSPACE/vendor/react-native-accessibility-controller"
+          LINK="node_modules/react-native-accessibility-controller"
+          test -e "$LINK"
+          REAL="$(readlink -f "$LINK")"
+          echo "resolved=$REAL"
+          case "$REAL" in
+            "$GITHUB_WORKSPACE"/node_modules/.pnpm/react-native-accessibility-controller@file+vendor+react-native-accessibility-controller_*/node_modules/react-native-accessibility-controller) ;;
+            *) echo "ERROR: unexpected pnpm materialization path: $REAL" >&2; exit 1 ;;
+          esac
+          test -f "$REAL/package.json"
+          grep -F 'vendor/react-native-accessibility-controller' pnpm-lock.yaml
+          node - "$REAL/package.json" "$VENDOR/package.json" <<'NODE'
+          const fs=require('fs');
+          const resolved=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const vendor=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));
+          for (const p of [resolved,vendor]) {
+            if (p.name !== 'react-native-accessibility-controller' || p.version !== '1.4.0') process.exit(1);
+            for (const k of ['main','module','types']) if (p[k] !== 'src/index.ts') process.exit(1);
+          }
+          console.log(JSON.stringify({name:resolved.name,version:resolved.version,main:resolved.main,module:resolved.module,types:resolved.types}));
+          NODE
+          diff -qr "$VENDOR/src" "$REAL/src"
+          diff -qr "$VENDOR/android" "$REAL/android"
+          cmp "$VENDOR/package.json" "$REAL/package.json"
+      - name: D2 — TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: D3 — Expo prebuild clean
+        run: pnpm exec expo prebuild --platform android --clean
+      - name: D4 — New Architecture evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s android/gradle.properties
+          cat android/gradle.properties
+          grep -R -E 'newArchEnabled|newArch' android/gradle.properties android/settings.gradle android/build.gradle 2>/dev/null || true
+      - name: Prepare Gradle 8.13 and Android SDK path
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?ANDROID_HOME absent after prebuild}"
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
+          WRAPPER='android/gradle/wrapper/gradle-wrapper.properties'
+          test -s "$WRAPPER"
+          GRADLE_VERSION='8.13'
+          GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          sed -i -E "s#^distributionUrl=.*#distributionUrl=${GRADLE_URL}#" "$WRAPPER"
+          grep -F "distributionUrl=${GRADLE_URL}" "$WRAPPER"
+      - name: Verify generated Gradle and libbox inputs
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R "ru.mirsamozanyatykh:libbox:1.0.0" app/build.gradle
+          grep -R "build/native/maven" build.gradle settings.gradle app/build.gradle 2>/dev/null || true
+          test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
+          ./gradlew --version | tee "$RUNNER_TEMP/gradle-version.txt"
+          grep -F 'Gradle 8.13' "$RUNNER_TEMP/gradle-version.txt"
+      - name: D5 — Gradle debug build
+        working-directory: android
+        shell: bash
+        run: ./gradlew assembleDebug --no-daemon --stacktrace --console=plain
+      - name: D6 — merged manifest evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="$(find android/app/build/intermediates -path '*merged_manifests*' -name AndroidManifest.xml | head -1)"
+          test -n "$MANIFEST"
+          echo "MANIFEST=$MANIFEST"
+          grep -A12 -B3 'com.beddatech.accessibilitycontroller.AccessibilityControllerService' "$MANIFEST"
+          grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' "$MANIFEST"
+          grep -q 'android.accessibilityservice.AccessibilityService' "$MANIFEST"
+      - name: D7 — APK evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='android/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$APK"
+          echo "APK bytes=$(stat -c '%s' "$APK")"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml | grep -A12 'AccessibilityControllerService'
+      - name: Upload D7 debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ox2-bedda-d7-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

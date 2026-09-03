@@ -6,12 +6,14 @@ const native = {
   perform: vi.fn(),
 }
 
-vi.mock('expo', () => ({
-  requireNativeModule: () => native,
+vi.mock('../../../modules/accessibility-agent', () => ({
+  HANDS_MAX_TREE_NODES: 200,
+  isAccessibilityEnabled: () => native.isEnabled(),
 }))
 
-vi.mock('react-native', () => ({
-  Platform: { OS: 'android' },
+vi.mock('../../../modules/accessibility-agent/native', () => ({
+  nativeGetAccessibilityTree: (maxNodes: number) => native.getTree(maxNodes),
+  nativePerformAccessibilityAction: (action: unknown) => native.perform(action),
 }))
 
 const node = (

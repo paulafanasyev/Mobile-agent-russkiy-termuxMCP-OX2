@@ -1,0 +1,17 @@
+{
+  "name": "react-native-accessibility-controller",
+  "version": "1.4.0",
+  "description": "Android AccessibilityService for React Native. Full read/write access to any app's UI tree, gestures, and system actions.",
+  "main": "src/index.ts",
+  "module": "src/index.ts",
+  "types": "src/index.ts",
+  "source": "src/index.ts",
+  "files": ["src", "android"],
+  "peerDependencies": {"react": ">=18.0.0", "react-native": ">=0.76.0"},
+  "codegenConfig": {
+    "name": "RNAccessibilityControllerSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "android": {"javaPackageName": "com.beddatech.accessibilitycontroller"}
+  }
+}
