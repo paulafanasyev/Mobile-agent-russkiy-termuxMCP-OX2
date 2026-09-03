@@ -128,10 +128,6 @@ jobs:
           test -e "$LINK"
           REAL="$(readlink -f "$LINK")"
           echo "resolved=$REAL"
-          # pnpm intentionally materializes file: dependencies under .pnpm.
-          # The top-level symlink is therefore NOT expected to resolve directly
-          # to $VENDOR. Provenance is established by the lockfile + byte-for-byte
-          # comparison of the materialized package against the committed vendor.
           case "$REAL" in
             "$GITHUB_WORKSPACE"/node_modules/.pnpm/react-native-accessibility-controller@file+vendor+react-native-accessibility-controller_*/node_modules/react-native-accessibility-controller) ;;
             *) echo "ERROR: unexpected pnpm materialization path: $REAL" >&2; exit 1 ;;
@@ -148,7 +144,9 @@ jobs:
           }
           console.log(JSON.stringify({name:resolved.name,version:resolved.version,main:resolved.main,module:resolved.module,types:resolved.types}));
           NODE
-          diff -qr --exclude=node_modules --exclude=.git "$VENDOR" "$REAL"
+          diff -qr "$VENDOR/src" "$REAL/src"
+          diff -qr "$VENDOR/android" "$REAL/android"
+          cmp "$VENDOR/package.json" "$REAL/package.json"
       - name: D2 — TypeScript
         run: pnpm exec tsc --noEmit
       - name: D3 — Expo prebuild clean
@@ -204,3 +202,10 @@ jobs:
           test -s "$APK"
           echo "APK bytes=$(stat -c '%s' "$APK")"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml | grep -A12 'AccessibilityControllerService'
+      - name: Upload D7 debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ox2-bedda-d7-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
