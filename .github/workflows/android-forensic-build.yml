@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GRADLE_OPTS: -Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
+
 jobs:
   build:
     name: Build Android APK (forensic unblock)
@@ -76,24 +79,31 @@ jobs:
           EOF
       - name: Expo prebuild
         run: pnpm exec expo prebuild --platform android --clean
-      - name: Pin Gradle
+      - name: Pin Gradle without mutating generated gradle.properties
         shell: bash
         run: |
           set -euo pipefail
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
           sed -i -E 's#^distributionUrl=.*#distributionUrl=https://services.gradle.org/distributions/gradle-8.13-bin.zip#' android/gradle/wrapper/gradle-wrapper.properties
-          cat >> android/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
-          org.gradle.workers.max=2
-          EOF
-      - name: Verify Netty packaging fix
+          test -f android/gradle.properties
+          if grep -Fq 'META-INF/INDEX.LISTorg.gradle.jvmargs=' android/gradle.properties; then
+            echo 'ERROR: malformed gradle.properties concatenation detected' >&2
+            exit 1
+          fi
+          echo 'GRADLE_PROPERTIES_CONCATENATION=PASS'
+      - name: Verify generated Netty packaging configuration
         shell: bash
         run: |
           set -euo pipefail
-          grep -n -A8 -B2 'packagingOptions' app.json
-          grep -Fq '"pickFirst"' app.json
-          grep -Fq 'META-INF/io.netty.versions.properties' app.json
-          ! grep -A8 'packagingOptions' app.json | grep -Fq '"exclude".*io.netty.versions.properties'
+          echo '--- android/gradle.properties ---'
+          cat android/gradle.properties
+          echo '--- generated android/app/build.gradle packaging lines ---'
+          grep -n -E 'packagingOptions|pickFirst|exclude|io.netty.versions.properties|META-INF/INDEX.LIST' android/app/build.gradle || true
+          ! grep -Fq 'META-INF/INDEX.LISTorg.gradle.jvmargs=' android/gradle.properties
+          ! grep -Fq 'META-INF/INDEX.LISTorg.gradle.jvmargs=' android/app/build.gradle
+          grep -Fq 'META-INF/INDEX.LIST' android/app/build.gradle
+          grep -Fq 'META-INF/io.netty.versions.properties' android/app/build.gradle
+          echo 'GENERATED_NETTY_PACKAGING=PASS'
       - name: Assemble debug APK
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace --info --console=plain
