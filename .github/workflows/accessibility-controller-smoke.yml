@@ -149,6 +149,14 @@ jobs:
           grep -Fq 'findProperty("android.packagingOptions.$prop")' "$BUILD"
           grep -Fq 'android.packagingOptions[prop] += it' "$BUILD"
           echo 'GENERATED_NETTY_PACKAGING=PASS'
+      - name: Force debug JS bundle for forensic APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :app:bundleDebugJsAndAssets --no-daemon --stacktrace --console=plain --project-dir android
+          BUNDLE_DIR=android/app/build/generated/assets/react/debug
+          test -s "$BUNDLE_DIR/index.android.bundle"
+          echo "DEBUG_JS_BUNDLE=$BUNDLE_DIR/index.android.bundle" | tee controller-build-gate.txt
       - name: Assemble debug APK
         id: assemble
         working-directory: android
@@ -168,6 +176,9 @@ jobs:
           test -s controller-apk-manifest.txt
           grep -Fq 'com.paulafanasyev.ox2.accessibility.OX2BeddaAccessibilityService' controller-apk-manifest.txt
           grep -Fq 'android.permission.BIND_ACCESSIBILITY_SERVICE' controller-apk-manifest.txt
+          unzip -l accessibility-controller-smoke.apk | tee controller-apk-contents.txt
+          grep -Fq 'index.android.bundle' controller-apk-contents.txt
+          echo 'APK_JS_BUNDLE=PASS' | tee -a controller-build-gate.txt
           echo 'APK_MANIFEST_AAPT=PASS' | tee -a controller-build-gate.txt
       - name: Enable KVM
         run: |
@@ -191,7 +202,7 @@ jobs:
           echo "probe_outcome=${{ steps.controller_probe.outcome }}" | tee controller-evidence-summary.txt
           echo "run_id=$GITHUB_RUN_ID" | tee -a controller-evidence-summary.txt
           echo "head_sha=$GITHUB_SHA" | tee -a controller-evidence-summary.txt
-          for f in controller-accessibility-dump.txt controller-accessibility-dump-final.txt controller-activity-services.txt controller-activity-services-final.txt controller-window.txt controller-logcat.txt controller-launch.txt controller-top.txt controller-ui.xml controller-after.png controller-package.txt controller-activities.txt controller-fatal.txt accessibility-controller-runtime.txt accessibility-controller-apk-sha256.txt controller-apk-source-path.txt controller-apk-manifest.txt controller-build-gate.txt; do
+          for f in controller-accessibility-dump.txt controller-accessibility-dump-final.txt controller-activity-services.txt controller-activity-services-final.txt controller-window.txt controller-logcat.txt controller-launch.txt controller-top.txt controller-ui.xml controller-after.png controller-package.txt controller-activities.txt controller-fatal.txt accessibility-controller-runtime.txt accessibility-controller-apk-sha256.txt controller-apk-source-path.txt controller-apk-manifest.txt controller-apk-contents.txt controller-build-gate.txt; do
             if [ -e "$f" ]; then echo "EVIDENCE_PRESENT=$f size=$(wc -c < "$f")" | tee -a controller-evidence-summary.txt; else echo "EVIDENCE_MISSING=$f" | tee -a controller-evidence-summary.txt; fi
           done
           if [ -f controller-accessibility-dump.txt ]; then grep -E 'OX2BeddaAccessibilityService|Enabled services:|Bound services:|installedServiceCount' controller-accessibility-dump.txt || true; fi
@@ -210,6 +221,7 @@ jobs:
             accessibility-controller-runtime.txt
             accessibility-controller-apk-sha256.txt
             controller-apk-manifest.txt
+            controller-apk-contents.txt
             accessibility-controller-smoke.apk
           )
           missing=0
@@ -236,6 +248,7 @@ jobs:
             accessibility-controller-smoke.apk
             controller-apk-source-path.txt
             controller-apk-manifest.txt
+            controller-apk-contents.txt
             controller-build-gate.txt
             accessibility-controller-runtime.txt
             controller-accessibility-dump.txt
