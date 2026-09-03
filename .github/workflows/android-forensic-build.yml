@@ -99,16 +99,23 @@ jobs:
           BUILD=android/app/build.gradle
           test -f "$PROPS"
           test -f "$BUILD"
+
+          # Expo generates packagingOptions dynamically from gradle.properties.
+          # Therefore the concrete Netty paths must be verified in PROPS, while
+          # build.gradle must be verified to contain the dynamic bridge.
           grep -Fxq 'android.packagingOptions.pickFirsts=META-INF/io.netty.versions.properties' "$PROPS"
           grep -Fxq 'android.packagingOptions.excludes=META-INF/INDEX.LIST' "$PROPS"
           ! grep -Fq 'META-INF/INDEX.LISTorg.gradle.jvmargs=' "$PROPS"
           ! grep -Fq 'META-INF/io.netty.versions.propertiesorg.gradle.jvmargs=' "$PROPS"
+
           if [ "$(tail -c 1 "$PROPS" | od -An -t x1 | tr -d ' \n')" != '0a' ]; then
             printf '\n' >> "$PROPS"
           fi
           test "$(tail -c 1 "$PROPS" | od -An -t x1 | tr -d ' \n')" = '0a'
+
           grep -Fq 'packagingOptions {' "$BUILD"
           grep -Fq 'findProperty("android.packagingOptions.$prop")' "$BUILD"
+          grep -Fq 'android.packagingOptions[prop] += it' "$BUILD"
           echo 'GENERATED_NETTY_PACKAGING=PASS'
       - name: Assemble debug APK
         working-directory: android
