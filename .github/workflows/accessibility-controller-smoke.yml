@@ -124,6 +124,7 @@ jobs:
         run: |
           set -euo pipefail
           PROPS=android/gradle.properties
+          BUILD=android/app/build.gradle
           test -f "$PROPS"
           grep -Fxq 'android.packagingOptions.pickFirsts=META-INF/io.netty.versions.properties' "$PROPS"
           grep -Fxq 'android.packagingOptions.excludes=META-INF/INDEX.LIST' "$PROPS"
@@ -133,8 +134,11 @@ jobs:
             printf '\n' >> "$PROPS"
           fi
           test "$(tail -c 1 "$PROPS" | od -An -t x1 | tr -d ' \n')" = '0a'
-          grep -Fq 'packagingOptions {' android/app/build.gradle
-          grep -Fq 'findProperty("android.packagingOptions.$prop")' android/app/build.gradle
+          # Expo's generated Gradle file reads these values dynamically; the
+          # concrete Netty paths belong in gradle.properties, not build.gradle.
+          grep -Fq 'packagingOptions {' "$BUILD"
+          grep -Fq 'findProperty("android.packagingOptions.$prop")' "$BUILD"
+          grep -Fq 'android.packagingOptions[prop] += it' "$BUILD"
           echo 'GENERATED_NETTY_PACKAGING=PASS'
       - name: Assemble debug APK
         working-directory: android
@@ -166,10 +170,11 @@ jobs:
         run: |
           set +e
           echo "probe_outcome=${{ steps.controller_probe.outcome }}" | tee controller-evidence-summary.txt
-          for f in controller-accessibility-dump.txt controller-logcat.txt controller-launch.txt controller-top.txt controller-ui.xml controller-after.png controller-package.txt controller-activities.txt controller-fatal.txt accessibility-controller-runtime.txt accessibility-controller-apk-sha256.txt controller-build-gate.txt; do
+          for f in controller-accessibility-dump.txt controller-activity-services.txt controller-window.txt controller-logcat.txt controller-launch.txt controller-top.txt controller-ui.xml controller-after.png controller-package.txt controller-activities.txt controller-fatal.txt accessibility-controller-runtime.txt accessibility-controller-apk-sha256.txt controller-build-gate.txt; do
             if [ -e "$f" ]; then echo "EVIDENCE_PRESENT=$f size=$(wc -c < "$f")" | tee -a controller-evidence-summary.txt; else echo "EVIDENCE_MISSING=$f" | tee -a controller-evidence-summary.txt; fi
           done
           if [ -f controller-accessibility-dump.txt ]; then grep -E 'OX2BeddaAccessibilityService|Bound services:' controller-accessibility-dump.txt || true; fi
+          if [ -f controller-activity-services.txt ]; then grep -E 'OX2BeddaAccessibilityService|ProcessRecord' controller-activity-services.txt || true; fi
           if [ -f controller-logcat.txt ]; then grep -E 'OX2BeddaAccessibility|ACCESSIBILITY_CONTROLLER_|PASS:' controller-logcat.txt || true; fi
       - name: Upload forensic evidence
         if: always()
@@ -181,6 +186,8 @@ jobs:
             controller-build-gate.txt
             accessibility-controller-runtime.txt
             controller-accessibility-dump.txt
+            controller-activity-services.txt
+            controller-window.txt
             controller-logcat.txt
             controller-launch.txt
             controller-top.txt
