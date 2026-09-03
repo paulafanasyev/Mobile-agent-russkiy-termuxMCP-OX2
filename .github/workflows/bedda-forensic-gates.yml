@@ -123,21 +123,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          VENDOR="$GITHUB_WORKSPACE/vendor/react-native-accessibility-controller"
           LINK="node_modules/react-native-accessibility-controller"
           test -e "$LINK"
           REAL="$(readlink -f "$LINK")"
           echo "resolved=$REAL"
+          # pnpm intentionally materializes file: dependencies under .pnpm.
+          # The top-level symlink is therefore NOT expected to resolve directly
+          # to $VENDOR. Provenance is established by the lockfile + byte-for-byte
+          # comparison of the materialized package against the committed vendor.
           case "$REAL" in
-            "$GITHUB_WORKSPACE"/vendor/react-native-accessibility-controller) ;;
-            *) echo "ERROR: Bedda resolved outside committed vendor: $REAL" >&2; exit 1 ;;
+            "$GITHUB_WORKSPACE"/node_modules/.pnpm/react-native-accessibility-controller@file+vendor+react-native-accessibility-controller_*/node_modules/react-native-accessibility-controller) ;;
+            *) echo "ERROR: unexpected pnpm materialization path: $REAL" >&2; exit 1 ;;
           esac
           test -f "$REAL/package.json"
-          node - "$REAL/package.json" <<'NODE'
-          const fs=require('fs'); const p=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
-          if (p.name !== 'react-native-accessibility-controller' || p.version !== '1.4.0') process.exit(1);
-          if (p.main !== 'src/index.ts' || p.module !== 'src/index.ts' || p.types !== 'src/index.ts') process.exit(1);
-          console.log(JSON.stringify({name:p.name,version:p.version,main:p.main,module:p.module,types:p.types}));
+          grep -F 'file:vendor/react-native-accessibility-controller' pnpm-lock.yaml
+          node - "$REAL/package.json" "$VENDOR/package.json" <<'NODE'
+          const fs=require('fs');
+          const resolved=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const vendor=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));
+          for (const p of [resolved,vendor]) {
+            if (p.name !== 'react-native-accessibility-controller' || p.version !== '1.4.0') process.exit(1);
+            for (const k of ['main','module','types']) if (p[k] !== 'src/index.ts') process.exit(1);
+          }
+          console.log(JSON.stringify({name:resolved.name,version:resolved.version,main:resolved.main,module:resolved.module,types:resolved.types}));
           NODE
+          diff -qr --exclude=node_modules --exclude=.git "$VENDOR" "$REAL"
       - name: D2 — TypeScript
         run: pnpm exec tsc --noEmit
       - name: D3 — Expo prebuild clean
