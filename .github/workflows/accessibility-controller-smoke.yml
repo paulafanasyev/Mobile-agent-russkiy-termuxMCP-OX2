@@ -123,14 +123,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo '--- android/gradle.properties ---'
-          cat android/gradle.properties
-          echo '--- generated android/app/build.gradle packaging lines ---'
-          grep -n -E 'packagingOptions|pickFirst|exclude|io.netty.versions.properties|META-INF/INDEX.LIST' android/app/build.gradle || true
-          ! grep -Fq 'META-INF/INDEX.LISTorg.gradle.jvmargs=' android/gradle.properties
-          ! grep -Fq 'META-INF/INDEX.LISTorg.gradle.jvmargs=' android/app/build.gradle
-          grep -Fq 'META-INF/INDEX.LIST' android/app/build.gradle
-          grep -Fq 'META-INF/io.netty.versions.properties' android/app/build.gradle
+          PROPS=android/gradle.properties
+          test -f "$PROPS"
+          grep -Fxq 'android.packagingOptions.pickFirsts=META-INF/io.netty.versions.properties' "$PROPS"
+          grep -Fxq 'android.packagingOptions.excludes=META-INF/INDEX.LIST' "$PROPS"
+          ! grep -Fq 'META-INF/INDEX.LISTorg.gradle.jvmargs=' "$PROPS"
+          ! grep -Fq 'META-INF/io.netty.versions.propertiesorg.gradle.jvmargs=' "$PROPS"
+          test "$(tail -c 1 "$PROPS" | od -An -t x1 | tr -d ' \n')" = '0a'
+          grep -Fq 'packagingOptions {' android/app/build.gradle
+          grep -Fq 'findProperty("android.packagingOptions.$prop")' android/app/build.gradle
           echo 'GENERATED_NETTY_PACKAGING=PASS'
       - name: Assemble debug APK
         working-directory: android
