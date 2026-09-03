@@ -150,13 +150,14 @@ jobs:
           grep -Fq 'android.packagingOptions[prop] += it' "$BUILD"
           echo 'GENERATED_NETTY_PACKAGING=PASS'
       - name: Force debug JS bundle for forensic APK
+        working-directory: android
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew :app:bundleDebugJsAndAssets --no-daemon --stacktrace --console=plain --project-dir android
-          BUNDLE_DIR=android/app/build/generated/assets/react/debug
+          ./gradlew :app:bundleDebugJsAndAssets --no-daemon --stacktrace --console=plain
+          BUNDLE_DIR=app/build/generated/assets/react/debug
           test -s "$BUNDLE_DIR/index.android.bundle"
-          echo "DEBUG_JS_BUNDLE=$BUNDLE_DIR/index.android.bundle" | tee controller-build-gate.txt
+          echo "DEBUG_JS_BUNDLE=$BUNDLE_DIR/index.android.bundle" | tee ../controller-build-gate.txt
       - name: Assemble debug APK
         id: assemble
         working-directory: android
