@@ -17,16 +17,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Node 22
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
       - name: pnpm 10.29.2
         uses: pnpm/action-setup@v4
         with:
           version: 10.29.2
           run_install: false
+      - name: Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
       - name: D0-A — committed vendor only
         shell: bash
         run: |
