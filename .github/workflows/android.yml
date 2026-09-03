@@ -35,10 +35,49 @@ jobs:
           cache: pnpm
       - name: D0-A — подготовить детерминированный Bedda v1.4.0 vendor
         run: bash scripts/vendor-bedda-v1.4.0.sh
+      - name: D0-A verify — vendor exists and exports the Bedda API
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          VENDOR="$ROOT/vendor/react-native-accessibility-controller"
+          echo "GITHUB_WORKSPACE=$ROOT"
+          echo "VENDOR=$VENDOR"
+          pwd
+          ls -ld "$ROOT/vendor" "$VENDOR"
+          test -f "$VENDOR/package.json"
+          test -f "$VENDOR/src/index.ts"
+          test -f "$VENDOR/android/src/main/AndroidManifest.xml"
+          node - "$VENDOR/package.json" <<'NODE'
+          const fs = require('fs');
+          const p = process.argv[2];
+          const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+          for (const [key, expected] of [['main','src/index.ts'],['module','src/index.ts'],['types','src/index.ts']]) {
+            if (pkg[key] !== expected) throw new Error(`${key}=${pkg[key]} (expected ${expected})`);
+          }
+          console.log(JSON.stringify({name: pkg.name, version: pkg.version, main: pkg.main, module: pkg.module, types: pkg.types}, null, 2));
+          NODE
+          grep -F 'export async function getAccessibilityTree' "$VENDOR/src/index.ts"
+          grep -F 'export async function tapNode' "$VENDOR/src/index.ts"
+          grep -F 'export async function globalAction' "$VENDOR/src/index.ts"
+          grep -F 'export async function isServiceEnabled' "$VENDOR/src/index.ts"
       - name: D0-B — проверить react-native-tts-kit 0.1.2
         run: pnpm view react-native-tts-kit@0.1.2 version
       - name: D1 — установить JavaScript-зависимости
         run: pnpm install --no-frozen-lockfile
+      - name: D1 verify — resolved Bedda package
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG="node_modules/.pnpm/react-native-accessibility-controller@file+vendor+react-native-accessibility-controller_"*
+          test -d "$PKG/node_modules/react-native-accessibility-controller"
+          node - "$PKG/node_modules/react-native-accessibility-controller/package.json" <<'NODE'
+          const fs = require('fs');
+          const p = process.argv[2];
+          const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+          console.log(JSON.stringify({name: pkg.name, version: pkg.version, main: pkg.main, module: pkg.module, types: pkg.types}, null, 2));
+          if (pkg.main !== 'src/index.ts' || pkg.module !== 'src/index.ts' || pkg.types !== 'src/index.ts') process.exit(1);
+          NODE
       - name: D2 — TypeScript typecheck
         run: pnpm exec tsc --noEmit
       - name: Unit tests
@@ -74,6 +113,31 @@ jobs:
           cache: pnpm
       - name: D0-A — подготовить детерминированный Bedda v1.4.0 vendor
         run: bash scripts/vendor-bedda-v1.4.0.sh
+      - name: D0-A verify — vendor exists and exports the Bedda API
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          VENDOR="$ROOT/vendor/react-native-accessibility-controller"
+          echo "GITHUB_WORKSPACE=$ROOT"
+          echo "VENDOR=$VENDOR"
+          ls -ld "$ROOT/vendor" "$VENDOR"
+          test -f "$VENDOR/package.json"
+          test -f "$VENDOR/src/index.ts"
+          test -f "$VENDOR/android/src/main/AndroidManifest.xml"
+          node - "$VENDOR/package.json" <<'NODE'
+          const fs = require('fs');
+          const p = process.argv[2];
+          const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+          for (const [key, expected] of [['main','src/index.ts'],['module','src/index.ts'],['types','src/index.ts']]) {
+            if (pkg[key] !== expected) throw new Error(`${key}=${pkg[key]} (expected ${expected})`);
+          }
+          console.log(JSON.stringify({name: pkg.name, version: pkg.version, main: pkg.main, module: pkg.module, types: pkg.types}, null, 2));
+          NODE
+          grep -F 'export async function getAccessibilityTree' "$VENDOR/src/index.ts"
+          grep -F 'export async function tapNode' "$VENDOR/src/index.ts"
+          grep -F 'export async function globalAction' "$VENDOR/src/index.ts"
+          grep -F 'export async function isServiceEnabled' "$VENDOR/src/index.ts"
       - name: D0-B — проверить react-native-tts-kit 0.1.2
         run: pnpm view react-native-tts-kit@0.1.2 version
       - name: Android SDK и NDK
@@ -141,6 +205,19 @@ jobs:
           test -s "$MAVEN_DIR/libbox-1.0.0.pom"
       - name: D1 — установить JavaScript-зависимости
         run: pnpm install --no-frozen-lockfile
+      - name: D1 verify — resolved Bedda package
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG="node_modules/.pnpm/react-native-accessibility-controller@file+vendor+react-native-accessibility-controller_"*
+          test -d "$PKG/node_modules/react-native-accessibility-controller"
+          node - "$PKG/node_modules/react-native-accessibility-controller/package.json" <<'NODE'
+          const fs = require('fs');
+          const p = process.argv[2];
+          const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+          console.log(JSON.stringify({name: pkg.name, version: pkg.version, main: pkg.main, module: pkg.module, types: pkg.types}, null, 2));
+          if (pkg.main !== 'src/index.ts' || pkg.module !== 'src/index.ts' || pkg.types !== 'src/index.ts') process.exit(1);
+          NODE
       - name: D3 — Expo prebuild
         run: pnpm exec expo prebuild --platform android --clean
       - name: D4 — проверить New Architecture после prebuild
