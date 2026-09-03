@@ -129,6 +129,9 @@ jobs:
           grep -Fxq 'android.packagingOptions.excludes=META-INF/INDEX.LIST' "$PROPS"
           ! grep -Fq 'META-INF/INDEX.LISTorg.gradle.jvmargs=' "$PROPS"
           ! grep -Fq 'META-INF/io.netty.versions.propertiesorg.gradle.jvmargs=' "$PROPS"
+          if [ "$(tail -c 1 "$PROPS" | od -An -t x1 | tr -d ' \n')" != '0a' ]; then
+            printf '\n' >> "$PROPS"
+          fi
           test "$(tail -c 1 "$PROPS" | od -An -t x1 | tr -d ' \n')" = '0a'
           grep -Fq 'packagingOptions {' android/app/build.gradle
           grep -Fq 'findProperty("android.packagingOptions.$prop")' android/app/build.gradle
