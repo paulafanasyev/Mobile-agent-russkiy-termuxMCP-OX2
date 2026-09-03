@@ -1,0 +1,229 @@
+name: Forensic Bedda Runtime D8–D11
+
+on:
+  workflow_run:
+    workflows: ["Android APK Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      upstream_run_id:
+        description: "Successful Android APK Release workflow run ID"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  runtime-forensic:
+    name: D8–D11 Emulator Runtime
+    if: >-
+      ${{
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+        github.event_name == 'workflow_dispatch'
+      }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve upstream run ID
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
+            RUN_ID="${{ github.event.workflow_run.id }}"
+          else
+            RUN_ID="${{ inputs.upstream_run_id }}"
+          fi
+          test -n "$RUN_ID"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "UPSTREAM_RUN_ID=$RUN_ID"
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mobile-agent-russkiy-debug-apk
+          path: ./apk
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.upstream.outputs.run_id }}
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find ./apk -type f -name '*.apk' | head -1)
+          test -n "$APK"
+          cp "$APK" ./apk/app-debug.apk
+          ls -la ./apk/app-debug.apk
+          echo "APK_SHA256=$(sha256sum ./apk/app-debug.apk | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools emulator platforms;android-33 system-images;android-33;google_apis;x86_64"
+
+      - name: Boot emulator API 33
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "no" | avdmanager create avd \
+            -n test_api_33 \
+            -k "system-images;android-33;google_apis;x86_64" \
+            --force
+          emulator -avd test_api_33 \
+            -no-window -no-boot-anim -gpu swiftshader_indirect -no-snapshot-save \
+            -noaudio -camera-back none &
+          adb wait-for-device
+          while [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]; do
+            sleep 2
+          done
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          echo "BOOT_COMPLETED=1" >> "$GITHUB_ENV"
+
+      - name: Start logcat capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb logcat -c
+          adb logcat -v threadtime > /tmp/full-logcat.txt &
+          echo "LOGCAT_PID=$!" >> "$GITHUB_ENV"
+
+      - name: D8 — Install + dumpsys before
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb install -r ./apk/app-debug.apk
+          sleep 2
+          adb shell dumpsys accessibility > /tmp/dumpsys-before.txt
+
+      - name: D9 — Enable service + dumpsys after
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb shell settings put secure enabled_accessibility_services \
+            "ru.mirsamozanyatykh.mobileagent/com.beddatech.accessibilitycontroller.AccessibilityControllerService"
+          sleep 5
+          adb shell dumpsys accessibility > /tmp/dumpsys-after.txt
+
+      - name: D10 — Launch app
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb shell am force-stop ru.mirsamozanyatykh.mobileagent || true
+          adb shell monkey -p ru.mirsamozanyatykh.mobileagent 1 >/tmp/launch.txt 2>&1
+          sleep 5
+          adb shell dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp' > /tmp/focus-after-launch.txt || true
+
+      - name: D11 — Functional test via UIAutomator
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+          adb shell cat /sdcard/window.xml > /tmp/ui-dump.xml || true
+          if grep -q 'text="Test Tree"' /tmp/ui-dump.xml; then
+            FORENSIC_UI=1
+          else
+            FORENSIC_UI=0
+          fi
+          echo "FORENSIC_UI=$FORENSIC_UI" >> "$GITHUB_ENV"
+
+          tap_text() {
+            local text="$1"
+            adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+            adb shell cat /sdcard/window.xml > /tmp/ui-dump.xml || true
+            python3 - "$text" /tmp/ui-dump.xml <<'PY'
+import re, sys
+text, path = sys.argv[1], sys.argv[2]
+s = open(path, encoding='utf-8', errors='ignore').read()
+pat = r'<node[^>]*text="' + re.escape(text) + r'"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'
+m = re.search(pat, s)
+if not m:
+    sys.exit(2)
+x1,y1,x2,y2 = map(int, m.groups())
+print((x1+x2)//2, (y1+y2)//2)
+PY
+          }
+
+          if [ "$FORENSIC_UI" = "1" ]; then
+            if XY=$(tap_text "Test Tree"); then
+              set -- $XY
+              adb shell input tap "$1" "$2"
+              sleep 2
+            fi
+            if XY=$(tap_text "Test Tap"); then
+              set -- $XY
+              adb shell input tap "$1" "$2"
+              sleep 2
+            fi
+          fi
+
+          adb shell dumpsys accessibility > /tmp/dumpsys-after-tap-accessibility.txt
+          adb shell dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp' > /tmp/dumpsys-after-tap.txt || true
+
+      - name: Process and crash check
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb shell ps -A | grep 'ru.mirsamozanyatykh' > /tmp/process-check.txt || true
+          grep -iE 'FATAL EXCEPTION|ANR in ru\.mirsamozanyatykh|AndroidRuntime.*ru\.mirsamozanyatykh|crash' /tmp/full-logcat.txt > /tmp/crash-check.txt || true
+
+      - name: Compute G0–G11 verdict
+        shell: bash
+        run: |
+          set -u
+          echo '=== FORENSIC VERDICT ===' > /tmp/verdict.txt
+          echo "UPSTREAM_RUN_ID: ${{ steps.upstream.outputs.run_id }}" >> /tmp/verdict.txt
+          echo "APK_SHA256: $APK_SHA256" >> /tmp/verdict.txt
+          echo "BOOT_COMPLETED: ${BOOT_COMPLETED:-0}" >> /tmp/verdict.txt
+          echo '' >> /tmp/verdict.txt
+
+          if grep -q 'installedServiceCount: 1' /tmp/dumpsys-before.txt 2>/dev/null; then echo 'G0: PASS (installedServiceCount: 1)' >> /tmp/verdict.txt; else echo 'G0: FAIL' >> /tmp/verdict.txt; fi
+          if grep -q 'AccessibilityControllerService' /tmp/dumpsys-before.txt 2>/dev/null; then echo 'G1: PASS (service listed)' >> /tmp/verdict.txt; else echo 'G1: FAIL' >> /tmp/verdict.txt; fi
+          if grep -A15 'AccessibilityControllerService' /tmp/dumpsys-after.txt 2>/dev/null | grep -q 'enabled: true'; then echo 'G2: PASS (enabled: true)' >> /tmp/verdict.txt; else echo 'G2: FAIL' >> /tmp/verdict.txt; fi
+          if grep -A20 'AccessibilityControllerService' /tmp/dumpsys-after.txt 2>/dev/null | grep -q 'bound:'; then
+            if grep -A20 'AccessibilityControllerService' /tmp/dumpsys-after.txt 2>/dev/null | grep 'bound:' | grep -q '{}'; then echo 'G3: FAIL (bound: {})' >> /tmp/verdict.txt; else echo 'G3: PASS (bound present)' >> /tmp/verdict.txt; fi
+          else echo 'G3: FAIL (bound missing)' >> /tmp/verdict.txt; fi
+          if grep -q 'onServiceConnected' /tmp/full-logcat.txt 2>/dev/null; then echo 'G4: PASS (onServiceConnected found)' >> /tmp/verdict.txt; else echo 'G4: FAIL' >> /tmp/verdict.txt; fi
+
+          if [ "${FORENSIC_UI:-0}" = '1' ]; then
+            grep -q 'isEnabled=true' /tmp/full-logcat.txt 2>/dev/null && echo 'G5: PASS' >> /tmp/verdict.txt || echo 'G5: FAIL' >> /tmp/verdict.txt
+            grep -q 'tree nodes=' /tmp/full-logcat.txt 2>/dev/null && echo 'G6: PASS' >> /tmp/verdict.txt || echo 'G6: FAIL' >> /tmp/verdict.txt
+            grep -q 'tap result=true' /tmp/full-logcat.txt 2>/dev/null && echo 'G7: PASS' >> /tmp/verdict.txt || echo 'G7: FAIL' >> /tmp/verdict.txt
+            grep -q 'GestureDispatcher' /tmp/full-logcat.txt 2>/dev/null && echo 'G8: PASS' >> /tmp/verdict.txt || echo 'G8: FAIL' >> /tmp/verdict.txt
+          else
+            echo 'G5: INCONCLUSIVE (no forensic UI)' >> /tmp/verdict.txt
+            echo 'G6: INCONCLUSIVE (no forensic UI)' >> /tmp/verdict.txt
+            echo 'G7: INCONCLUSIVE (no forensic UI)' >> /tmp/verdict.txt
+            echo 'G8: INCONCLUSIVE (no forensic UI)' >> /tmp/verdict.txt
+          fi
+
+          if [ -s /tmp/dumpsys-after-tap.txt ]; then echo 'G9: PASS (focus captured)' >> /tmp/verdict.txt; else echo 'G9: FAIL' >> /tmp/verdict.txt; fi
+          if [ -s /tmp/process-check.txt ]; then echo 'G10: PASS (process alive)' >> /tmp/verdict.txt; else echo 'G10: FAIL' >> /tmp/verdict.txt; fi
+          if [ -s /tmp/crash-check.txt ]; then echo 'G11: FAIL (crash detected)' >> /tmp/verdict.txt; else echo 'G11: PASS (no matching crash)' >> /tmp/verdict.txt; fi
+          cat /tmp/verdict.txt
+
+      - name: Upload forensic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forensic-runtime-d8-d11
+          path: |
+            /tmp/dumpsys-before.txt
+            /tmp/dumpsys-after.txt
+            /tmp/dumpsys-after-tap-accessibility.txt
+            /tmp/dumpsys-after-tap.txt
+            /tmp/focus-after-launch.txt
+            /tmp/full-logcat.txt
+            /tmp/process-check.txt
+            /tmp/crash-check.txt
+            /tmp/ui-dump.xml
+            /tmp/launch.txt
+            /tmp/verdict.txt
+          if-no-files-found: warn
