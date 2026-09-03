@@ -107,7 +107,7 @@ export async function openAccessibilitySettings(): Promise<boolean> {
   return true;
 }
 
-export async function performAccessibilityAction(action: any): Promise<{ status: string; action: string }> {
+export async function dispatchAccessibilityAction(action: any): Promise<{ status: string; action: string }> {
   try {
     const type = String(action?.type ?? "unknown");
     let ok = false;
