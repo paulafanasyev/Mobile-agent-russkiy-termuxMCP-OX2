@@ -23,6 +23,12 @@ if grep -Eq '^emulator-5554[[:space:]]+device([[:space:]]|$)' controller-adb-dev
 APK="$GITHUB_WORKSPACE/accessibility-controller-smoke.apk"
 if $ADB install -r "$APK"; then pass H1_INSTALL reason=apk_installed; else fail H1_INSTALL reason=apk_install_failed; collect; exit 1; fi
 
+# Clean state MUST happen before accessibility is enabled. Never kill/clear the
+# app after H2/H3: doing so races AccessibilityManagerService binding and can
+# create a false H5 failure.
+$ADB shell am force-stop "$PKG" || true
+$ADB logcat -c || true
+
 $ADB shell settings put secure accessibility_enabled 1 >/dev/null 2>&1 || true
 $ADB shell settings put secure enabled_accessibility_services "$SERVICE" >/dev/null 2>&1 || true
 ENABLED=''; STATE=''
@@ -37,8 +43,6 @@ done
 if [ "$ENABLED" = 1 ]; then pass H2_ACCESSIBILITY_ENABLED reason=secure_setting_enabled; else fail H2_ACCESSIBILITY_ENABLED reason=secure_setting_not_enabled; fi
 if echo "$STATE" | grep -Fq "$SERVICE"; then pass H3_ACCESSIBILITY_SERVICE_ENABLED reason=service_listed; else fail H3_ACCESSIBILITY_SERVICE_ENABLED reason=service_not_listed; fi
 
-$ADB logcat -c || true
-$ADB shell am force-stop "$PKG" || true
 if $ADB shell am start -W -a android.intent.action.VIEW -d 'mobile-agent:///accessibility-controller-smoke' -p "$PKG" > controller-launch.txt 2>&1; then pass H4_CONTROLLER_ROUTE reason=route_launch_command_succeeded; else fail H4_CONTROLLER_ROUTE reason=route_launch_failed; collect; exit 1; fi
 
 BOUND=0
@@ -71,8 +75,6 @@ for _ in $(seq 1 60); do
   if grep -q 'PASS:ACCESSIBILITY_CONTROLLER_TAP_VERIFIED' controller-logcat.txt; then TAP=1; fi
   if grep -q 'ACCESSIBILITY_CONTROLLER_OPEN_SETTINGS=true' controller-logcat.txt; then OPEN_SETTINGS=1; fi
 
-  # Do not wait forever for JS markers if the native binding itself is already
-  # disproven. The raw dumps are retained for audit either way.
   [ "$BOUND" = 1 ] && [ "$LIFECYCLE" = 1 ] && [ "$JS_ENABLED" = 1 ] && [ "$TREE" = 1 ] && [ "$TAP" = 1 ] && [ "$OPEN_SETTINGS" = 1 ] && break
   sleep 1
 done
@@ -102,7 +104,6 @@ $ADB shell pidof com.android.settings | tr -d '\r' > controller-settings-pid.txt
 grep -E 'FATAL EXCEPTION|AndroidRuntime.*FATAL' controller-logcat.txt > controller-fatal.txt || true
 if [ ! -s controller-fatal.txt ]; then pass H10_NO_FATAL reason=no_fatal_exception; else fail H10_NO_FATAL reason=fatal_exception_present; fi
 
-# Preserve the final native/system snapshots under stable artifact names.
 cp controller-accessibility-dump.txt controller-accessibility-dump-final.txt 2>/dev/null || true
 cp controller-activity-services.txt controller-activity-services-final.txt 2>/dev/null || true
 cp controller-window.txt controller-window-final.txt 2>/dev/null || true
