@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_label">Deft Accessibility Controller</string>
+    <string name="accessibility_service_description">Allows Deft to read your screen and perform actions on your behalf using Android\'s Accessibility APIs. No data leaves your device.</string>
+</resources>
