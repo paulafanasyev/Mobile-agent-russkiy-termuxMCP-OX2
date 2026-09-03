@@ -1,0 +1,107 @@
+name: Bedda Forensic Gates
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [forensic/bedda-d0-d11]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: D0-D7 Bedda gates
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: pnpm 10.29.2
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+          run_install: false
+      - name: D0-A — committed vendor only
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENDOR="$GITHUB_WORKSPACE/vendor/react-native-accessibility-controller"
+          test -f "$VENDOR/package.json"
+          test -f "$VENDOR/src/index.ts"
+          test -f "$VENDOR/src/NativeAccessibilityController.ts"
+          test -f "$VENDOR/src/types.ts"
+          test -f "$VENDOR/android/build.gradle"
+          test -f "$VENDOR/android/src/main/AndroidManifest.xml"
+          test -f "$VENDOR/android/src/main/res/xml/accessibility_service_config.xml"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/AccessibilityControllerService.kt"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/AccessibilityControllerModule.kt"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/ScreenReader.kt"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/ActionDispatcher.kt"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/GestureDispatcher.kt"
+          test -f "$VENDOR/android/src/main/java/com/beddatech/accessibilitycontroller/OverlayManager.kt"
+          node - "$VENDOR/package.json" <<'NODE'
+          const fs=require('fs'); const p=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          for (const k of ['main','module','types']) if (p[k] !== 'src/index.ts') throw new Error(`${k}=${p[k]}`);
+          if (p.name !== 'react-native-accessibility-controller' || p.version !== '1.4.0') throw new Error('wrong package identity');
+          console.log(JSON.stringify({name:p.name,version:p.version,main:p.main,module:p.module,types:p.types}));
+          NODE
+          echo 'D0-A PASS: source is physically committed; no bootstrap is used by this workflow.'
+      - name: D0-B — verify tts-kit 0.1.2
+        run: pnpm view react-native-tts-kit@0.1.2 version
+      - name: D1 — install JavaScript dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: D1 verify — resolved Bedda package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e node_modules/react-native-accessibility-controller
+          REAL="$(readlink -f node_modules/react-native-accessibility-controller)"
+          echo "resolved=$REAL"
+          test -f "$REAL/package.json"
+          node - "$REAL/package.json" <<'NODE'
+          const fs=require('fs'); const p=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          if (p.name !== 'react-native-accessibility-controller' || p.version !== '1.4.0') process.exit(1);
+          if (p.main !== 'src/index.ts' || p.module !== 'src/index.ts' || p.types !== 'src/index.ts') process.exit(1);
+          console.log(JSON.stringify({name:p.name,version:p.version,main:p.main,module:p.module,types:p.types}));
+          NODE
+      - name: D2 — TypeScript
+        run: pnpm exec tsc --noEmit
+      - name: D3 — Expo prebuild clean
+        run: pnpm exec expo prebuild --platform android --clean
+      - name: D4 — New Architecture evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s android/gradle.properties
+          echo '--- gradle.properties ---'
+          cat android/gradle.properties
+          echo '--- newArch references ---'
+          grep -R -E 'newArchEnabled|newArch' android/gradle.properties android/settings.gradle android/build.gradle 2>/dev/null || true
+      - name: D5 — Gradle debug build
+        working-directory: android
+        shell: bash
+        run: ./gradlew assembleDebug --no-daemon --stacktrace --console=plain
+      - name: D6 — merged manifest evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="$(find android/app/build/intermediates -path '*merged_manifests*' -name AndroidManifest.xml | head -1)"
+          test -n "$MANIFEST"
+          echo "MANIFEST=$MANIFEST"
+          grep -A12 -B3 'com.beddatech.accessibilitycontroller.AccessibilityControllerService' "$MANIFEST"
+          grep -q 'android.permission.BIND_ACCESSIBILITY_SERVICE' "$MANIFEST"
+          grep -q 'android.accessibilityservice.AccessibilityService' "$MANIFEST"
+      - name: D7 — APK evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='android/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$APK"
+          echo "APK bytes=$(stat -c '%s' "$APK")"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml | grep -A12 'AccessibilityControllerService'
