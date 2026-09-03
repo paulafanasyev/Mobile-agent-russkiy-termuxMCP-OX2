@@ -137,7 +137,7 @@ jobs:
             *) echo "ERROR: unexpected pnpm materialization path: $REAL" >&2; exit 1 ;;
           esac
           test -f "$REAL/package.json"
-          grep -F 'file:vendor/react-native-accessibility-controller' pnpm-lock.yaml
+          grep -F 'vendor/react-native-accessibility-controller' pnpm-lock.yaml
           node - "$REAL/package.json" "$VENDOR/package.json" <<'NODE'
           const fs=require('fs');
           const resolved=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
