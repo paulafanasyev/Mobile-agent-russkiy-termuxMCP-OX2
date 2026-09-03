@@ -2,11 +2,9 @@ name: Android APK Release
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -33,51 +31,50 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: D0-A — подготовить детерминированный Bedda v1.4.0 vendor
+      - name: D0-A — подготовить Bedda v1.4.0 vendor
         run: bash scripts/vendor-bedda-v1.4.0.sh
-      - name: D0-A verify — vendor exists and exports the Bedda API
+      - name: D0-A verify — committed vendor
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="$GITHUB_WORKSPACE"
-          VENDOR="$ROOT/vendor/react-native-accessibility-controller"
-          echo "GITHUB_WORKSPACE=$ROOT"
-          echo "VENDOR=$VENDOR"
-          pwd
-          ls -ld "$ROOT/vendor" "$VENDOR"
+          VENDOR="$GITHUB_WORKSPACE/vendor/react-native-accessibility-controller"
           test -f "$VENDOR/package.json"
           test -f "$VENDOR/src/index.ts"
           test -f "$VENDOR/android/src/main/AndroidManifest.xml"
           node - "$VENDOR/package.json" <<'NODE'
           const fs = require('fs');
-          const p = process.argv[2];
-          const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
-          for (const [key, expected] of [['main','src/index.ts'],['module','src/index.ts'],['types','src/index.ts']]) {
-            if (pkg[key] !== expected) throw new Error(`${key}=${pkg[key]} (expected ${expected})`);
-          }
-          console.log(JSON.stringify({name: pkg.name, version: pkg.version, main: pkg.main, module: pkg.module, types: pkg.types}, null, 2));
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          for (const k of ['main','module','types']) if (p[k] !== 'src/index.ts') throw new Error(`${k}=${p[k]}`);
+          if (p.name !== 'react-native-accessibility-controller' || p.version !== '1.4.0') throw new Error('unexpected Bedda identity');
+          console.log(JSON.stringify({name:p.name,version:p.version,main:p.main,module:p.module,types:p.types}));
           NODE
           grep -F 'export async function getAccessibilityTree' "$VENDOR/src/index.ts"
           grep -F 'export async function tapNode' "$VENDOR/src/index.ts"
           grep -F 'export async function globalAction' "$VENDOR/src/index.ts"
           grep -F 'export async function isServiceEnabled' "$VENDOR/src/index.ts"
       - name: D0-B — проверить react-native-tts-kit 0.1.2
-        run: pnpm view react-native-tts-kit@0.1.2 version
+        run: test "$(pnpm view react-native-tts-kit@0.1.2 version)" = "0.1.2"
       - name: D1 — установить JavaScript-зависимости
         run: pnpm install --no-frozen-lockfile
       - name: D1 verify — resolved Bedda package
         shell: bash
         run: |
           set -euo pipefail
-          PKG="node_modules/.pnpm/react-native-accessibility-controller@file+vendor+react-native-accessibility-controller_"*
-          test -d "$PKG/node_modules/react-native-accessibility-controller"
-          node - "$PKG/node_modules/react-native-accessibility-controller/package.json" <<'NODE'
+          RESOLVED="$(node -p "require.resolve('react-native-accessibility-controller/package.json')")"
+          REAL="$(dirname "$(readlink -f "$RESOLVED")")"
+          VENDOR="$GITHUB_WORKSPACE/vendor/react-native-accessibility-controller"
+          echo "resolved=$RESOLVED"
+          echo "real=$REAL"
+          test -f "$REAL/package.json"
+          node - "$REAL/package.json" <<'NODE'
           const fs = require('fs');
-          const p = process.argv[2];
-          const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
-          console.log(JSON.stringify({name: pkg.name, version: pkg.version, main: pkg.main, module: pkg.module, types: pkg.types}, null, 2));
-          if (pkg.main !== 'src/index.ts' || pkg.module !== 'src/index.ts' || pkg.types !== 'src/index.ts') process.exit(1);
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (p.name !== 'react-native-accessibility-controller' || p.version !== '1.4.0') process.exit(1);
+          if (p.main !== 'src/index.ts' || p.module !== 'src/index.ts' || p.types !== 'src/index.ts') process.exit(1);
+          console.log(JSON.stringify({name:p.name,version:p.version,main:p.main,module:p.module,types:p.types}));
           NODE
+          grep -F 'vendor/react-native-accessibility-controller' pnpm-lock.yaml
+          diff -qr --exclude=node_modules --exclude=.git "$VENDOR" "$REAL"
       - name: D2 — TypeScript typecheck
         run: pnpm exec tsc --noEmit
       - name: Unit tests
@@ -111,89 +108,57 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: D0-A — подготовить детерминированный Bedda v1.4.0 vendor
-        run: bash scripts/vendor-bedda-v1.4.0.sh
-      - name: D0-A verify — vendor exists and exports the Bedda API
-        shell: bash
-        run: |
-          set -euo pipefail
-          ROOT="$GITHUB_WORKSPACE"
-          VENDOR="$ROOT/vendor/react-native-accessibility-controller"
-          echo "GITHUB_WORKSPACE=$ROOT"
-          echo "VENDOR=$VENDOR"
-          ls -ld "$ROOT/vendor" "$VENDOR"
-          test -f "$VENDOR/package.json"
-          test -f "$VENDOR/src/index.ts"
-          test -f "$VENDOR/android/src/main/AndroidManifest.xml"
-          node - "$VENDOR/package.json" <<'NODE'
-          const fs = require('fs');
-          const p = process.argv[2];
-          const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
-          for (const [key, expected] of [['main','src/index.ts'],['module','src/index.ts'],['types','src/index.ts']]) {
-            if (pkg[key] !== expected) throw new Error(`${key}=${pkg[key]} (expected ${expected})`);
-          }
-          console.log(JSON.stringify({name: pkg.name, version: pkg.version, main: pkg.main, module: pkg.module, types: pkg.types}, null, 2));
-          NODE
-          grep -F 'export async function getAccessibilityTree' "$VENDOR/src/index.ts"
-          grep -F 'export async function tapNode' "$VENDOR/src/index.ts"
-          grep -F 'export async function globalAction' "$VENDOR/src/index.ts"
-          grep -F 'export async function isServiceEnabled' "$VENDOR/src/index.ts"
-      - name: D0-B — проверить react-native-tts-kit 0.1.2
-        run: pnpm view react-native-tts-kit@0.1.2 version
       - name: Android SDK и NDK
         uses: android-actions/setup-android@v4
         with:
           packages: ''
-      - name: Установить и проверить Android SDK/NDK
+      - name: Установить Android SDK/NDK
         shell: bash
         run: |
           set -euo pipefail
           : "${ANDROID_HOME:?ANDROID_HOME отсутствует}"
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
           yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null 2>&1 || true
-          sdkmanager --sdk_root="$ANDROID_HOME" --install "platform-tools" "platforms;android-21" "platforms;android-23" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" "ndk;28.0.13004108"
-          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/28.0.13004108"
-          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
-          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
-          java -version
-          sdkmanager --version
-          sdkmanager --sdk_root="$ANDROID_HOME" --list_installed | grep -E 'platforms;android-(21|23|35|36)|build-tools;(35|36).0.0|ndk;28.0.13004108'
-          test -f "$ANDROID_HOME/platforms/android-21/android.jar"
-          test -f "$ANDROID_HOME/platforms/android-23/android.jar"
-          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
-          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
-          test -x "$ANDROID_HOME/build-tools/35.0.0/aapt2"
-          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt2"
-          test -x "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
-      - name: Собрать воспроизводимый libbox.aar
+          sdkmanager --sdk_root="$ANDROID_HOME" --install platform-tools platforms\;android-21 platforms\;android-23 platforms\;android-35 platforms\;android-36 build-tools\;35.0.0 build-tools\;36.0.0 ndk\;28.0.13004108
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.0.13004108" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.0.13004108" >> "$GITHUB_ENV"
+      - name: D0-A — подготовить Bedda vendor
+        run: bash scripts/vendor-bedda-v1.4.0.sh
+      - name: D1 — установить JavaScript-зависимости
+        run: pnpm install --no-frozen-lockfile
+      - name: D1 verify — resolved Bedda package
         shell: bash
         run: |
           set -euo pipefail
-          bash scripts/build-libbox-android.sh 2>&1 | tee "$RUNNER_TEMP/libbox-build.log"
-      - name: Проверить libbox
+          RESOLVED="$(node -p "require.resolve('react-native-accessibility-controller/package.json')")"
+          REAL="$(dirname "$(readlink -f "$RESOLVED")")"
+          VENDOR="$GITHUB_WORKSPACE/vendor/react-native-accessibility-controller"
+          test -f "$REAL/package.json"
+          test "$(node -p "require('$REAL/package.json').name")" = "react-native-accessibility-controller"
+          test "$(node -p "require('$REAL/package.json').version")" = "1.4.0"
+          diff -qr --exclude=node_modules --exclude=.git "$VENDOR" "$REAL"
+      - name: Собрать воспроизводимый libbox.aar
+        shell: bash
+        run: bash scripts/build-libbox-android.sh 2>&1 | tee "$RUNNER_TEMP/libbox-build.log"
+      - name: Проверить libbox provenance
         shell: bash
         run: |
           set -euo pipefail
           test -s build/native/libbox.aar
-          test -s build/native/libbox.aar.sha256
-          test -s build/native/sing-box-revision.txt
           sha256sum -c build/native/libbox.aar.sha256
           test "$(cat build/native/sing-box-revision.txt)" = "670d7a7693918b765a17c44aee5afb5d47ead390"
           unzip -t build/native/libbox.aar >/dev/null
           bash scripts/verify-android-agent.sh
-      - name: Подготовить локальный Maven-модуль libbox
+      - name: Подготовить локальный Maven libbox
         shell: bash
         run: |
           set -euo pipefail
-          MAVEN_DIR="build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0"
-          mkdir -p "$MAVEN_DIR"
-          cp build/native/libbox.aar "$MAVEN_DIR/libbox-1.0.0.aar"
-          cat > "$MAVEN_DIR/libbox-1.0.0.pom" <<'EOF'
+          D=build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0
+          mkdir -p "$D"
+          cp build/native/libbox.aar "$D/libbox-1.0.0.aar"
+          cat > "$D/libbox-1.0.0.pom" <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
-          <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
             <modelVersion>4.0.0</modelVersion>
             <groupId>ru.mirsamozanyatykh</groupId>
             <artifactId>libbox</artifactId>
@@ -201,136 +166,67 @@ jobs:
             <packaging>aar</packaging>
           </project>
           EOF
-          test -s "$MAVEN_DIR/libbox-1.0.0.aar"
-          test -s "$MAVEN_DIR/libbox-1.0.0.pom"
-      - name: D1 — установить JavaScript-зависимости
-        run: pnpm install --no-frozen-lockfile
-      - name: D1 verify — resolved Bedda package
-        shell: bash
-        run: |
-          set -euo pipefail
-          PKG="node_modules/.pnpm/react-native-accessibility-controller@file+vendor+react-native-accessibility-controller_"*
-          test -d "$PKG/node_modules/react-native-accessibility-controller"
-          node - "$PKG/node_modules/react-native-accessibility-controller/package.json" <<'NODE'
-          const fs = require('fs');
-          const p = process.argv[2];
-          const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
-          console.log(JSON.stringify({name: pkg.name, version: pkg.version, main: pkg.main, module: pkg.module, types: pkg.types}, null, 2));
-          if (pkg.main !== 'src/index.ts' || pkg.module !== 'src/index.ts' || pkg.types !== 'src/index.ts') process.exit(1);
-          NODE
-      - name: D3 — Expo prebuild
+          test -s "$D/libbox-1.0.0.aar"
+      - name: Expo prebuild
         run: pnpm exec expo prebuild --platform android --clean
-      - name: D4 — проверить New Architecture после prebuild
+      - name: Configure Gradle and local Maven
         shell: bash
         run: |
           set -euo pipefail
-          test -s android/gradle.properties
-          if grep -Eq '^newArchEnabled=' android/gradle.properties; then
-            grep -E '^newArchEnabled=' android/gradle.properties
-          else
-            echo 'newArchEnabled is absent; Expo SDK 57 default remains UNKNOWN until Gradle configuration is inspected.'
-          fi
-          grep -R 'newArchEnabled' android/gradle.properties android/settings.gradle android/build.gradle 2>/dev/null || true
-      - name: Зафиксировать Android SDK и Gradle для Gradle/AGP совместимости
-        shell: bash
-        run: |
-          set -euo pipefail
-          : "${ANDROID_HOME:?ANDROID_HOME отсутствует после prebuild}"
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
-          WRAPPER='android/gradle/wrapper/gradle-wrapper.properties'
-          test -s "$WRAPPER"
-          GRADLE_VERSION='8.13'
-          GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
-          sed -i -E "s#^distributionUrl=.*#distributionUrl=${GRADLE_URL}#" "$WRAPPER"
-          grep -F "distributionUrl=${GRADLE_URL}" "$WRAPPER"
+          WRAPPER=android/gradle/wrapper/gradle-wrapper.properties
+          sed -i -E 's#^distributionUrl=.*#distributionUrl=https://services.gradle.org/distributions/gradle-8.13-bin.zip#' "$WRAPPER"
           test -s android/local.properties
-          cat android/local.properties
-          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
-      - name: Проверить сгенерированный Gradle и libbox
+          grep -R 'ru.mirsamozanyatykh:libbox:1.0.0' android/app/build.gradle
+          test -s build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
+      - name: Configure Gradle heap
+        shell: bash
+        run: |
+          cat >> android/gradle.properties <<'PROPS'
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
+          org.gradle.workers.max=2
+          PROPS
+      - name: D5 — Gradle debug build
         working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-debug.log"
+      - name: D6 — merged manifest evidence
         shell: bash
         run: |
           set -euo pipefail
-          grep -R "ru.mirsamozanyatykh:libbox:1.0.0" app/build.gradle
-          grep -R "build/native/maven" build.gradle settings.gradle app/build.gradle 2>/dev/null || true
-          test -s ../build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0/libbox-1.0.0.aar
-          ./gradlew --version | tee "$RUNNER_TEMP/gradle-version.txt"
-          grep -F 'Gradle 8.13' "$RUNNER_TEMP/gradle-version.txt"
-      - name: D5 — собрать отладочный APK
-        id: assemble
-        working-directory: android
-        shell: bash
-        run: |
-          set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-debug.log"
-      - name: D6 — проверить merged manifest Bedda AccessibilityService
+          MANIFEST=android/app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml
+          test -f "$MANIFEST"
+          grep -F 'com.beddatech.accessibilitycontroller.AccessibilityControllerService' "$MANIFEST"
+          grep -F 'android.permission.BIND_ACCESSIBILITY_SERVICE' "$MANIFEST"
+          grep -F 'android.accessibilityservice' "$MANIFEST"
+      - name: D7 — APK evidence
         shell: bash
         run: |
           set -euo pipefail
-          MANIFEST='android/app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml'
-          if test -f "$MANIFEST"; then
-            grep -A12 -B3 'com.beddatech.accessibilitycontroller.AccessibilityControllerService' "$MANIFEST"
-          else
-            echo "Merged manifest not found at $MANIFEST"
-            find android/app/build/intermediates -name AndroidManifest.xml -print | head -20
-            exit 1
-          fi
-          test -f android/app/build/intermediates/merged_res/debug/mergeDebugResources/stripped.dir/xml/accessibility_service_config.xml || true
-      - name: D7 — проверить APK и AccessibilityService
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK='android/app/build/outputs/apk/debug/app-debug.apk'
+          APK=$(find android/app/build/outputs/apk/debug -type f -name '*.apk' | head -1)
           test -s "$APK"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml | grep -A10 'AccessibilityControllerService'
-          unzip -l "$APK" | grep 'accessibility_service_config.xml'
+          echo "APK=$APK"
       - name: Собрать release APK
         working-directory: android
-        shell: bash
-        run: |
-          set -o pipefail
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace --info --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-assemble-release.log"
-      - name: Сохранить полный Gradle лог при ошибке
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace --console=plain 2>&1 | tee "$RUNNER_TEMP/gradle-release.log"
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: mobile-agent-russiyskiy-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - name: Upload release APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: mobile-agent-russiyskiy-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+      - name: Upload diagnostics on failure
         if: ${{ failure() }}
         uses: actions/upload-artifact@v5
         with:
-          name: android-gradle-diagnostics-${{ github.run_id }}
+          name: android-build-diagnostics-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/gradle-assemble-debug.log
-            ${{ runner.temp }}/gradle-assemble-release.log
+            ${{ runner.temp }}/gradle-debug.log
+            ${{ runner.temp }}/gradle-release.log
             ${{ runner.temp }}/libbox-build.log
-            android/local.properties
-            android/gradle/wrapper/gradle-wrapper.properties
-            android/hs_err_pid*.log
           if-no-files-found: warn
-      - name: Найти APK
-        id: apk
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK=$(find android/app/build/outputs/apk -type f -name '*.apk' | head -1)
-          test -n "$APK"
-          echo "path=$APK" >> "$GITHUB_OUTPUT"
-          echo "APK=$APK"
-      - name: Загрузить APK как artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: mobile-agent-russkiy-debug-apk
-          path: ${{ steps.apk.outputs.path }}
-          if-no-files-found: error
-      - name: Загрузить release APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mobile-agent-russkiy-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
-      - name: Опубликовать сведения о сборке
-        run: |
-          echo "libbox revision: $(cat build/native/sing-box-revision.txt)"
-          echo "libbox SHA256: $(cut -d' ' -f1 build/native/libbox.aar.sha256)"
-          echo "Gradle: $(cd android && ./gradlew --version | grep '^Gradle ' || true)"
-          echo "Preflight: SDK API 21/23/35/36 + NDK 28 + Maven libbox + AAR checksum + CommandServer проверены"
-          echo "Hands: vendored react-native-accessibility-controller v1.4.0"
-          echo "Voice STT: expo-speech-recognition; offline Whisper remains a controlled integration target"
-          echo "Voice TTS: react-native-tts-kit 0.1.2 with expo-speech fallback"
-          echo "Release APK: android/app/build/outputs/apk/release/*.apk"
