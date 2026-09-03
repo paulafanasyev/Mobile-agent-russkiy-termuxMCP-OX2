@@ -1,7 +1,7 @@
 import { Platform } from 'react-native'
 import type { AccessibilityAction } from '../../src/tools/accessibility-tools'
 import type { AccessibilityNode } from './index'
-import { performAccessibilityAction } from './index'
+import { dispatchAccessibilityAction } from './index'
 
 export type NativeAccessibilityResult = {
   status: string
@@ -31,5 +31,5 @@ export async function nativePerformAccessibilityAction(
   action: AccessibilityAction,
 ): Promise<NativeAccessibilityResult> {
   if (Platform.OS !== 'android') return { status: 'unsupported_platform', action: action.type }
-  return performAccessibilityAction(action)
+  return dispatchAccessibilityAction(action)
 }
