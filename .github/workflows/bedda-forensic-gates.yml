@@ -62,7 +62,6 @@ jobs:
           if (p.name !== 'react-native-accessibility-controller' || p.version !== '1.4.0') throw new Error('wrong package identity');
           console.log(JSON.stringify({name:p.name,version:p.version,main:p.main,module:p.module,types:p.types}));
           NODE
-          echo 'D0-A PASS: source is physically committed; no bootstrap is used by this workflow.'
       - name: D0-B — verify tts-kit 0.1.2
         run: pnpm view react-native-tts-kit@0.1.2 version
       - name: Android SDK/NDK for reproducible libbox
@@ -124,9 +123,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -e node_modules/react-native-accessibility-controller
-          REAL="$(readlink -f node_modules/react-native-accessibility-controller)"
+          LINK="node_modules/react-native-accessibility-controller"
+          test -e "$LINK"
+          REAL="$(readlink -f "$LINK")"
           echo "resolved=$REAL"
+          case "$REAL" in
+            "$GITHUB_WORKSPACE"/vendor/react-native-accessibility-controller) ;;
+            *) echo "ERROR: Bedda resolved outside committed vendor: $REAL" >&2; exit 1 ;;
+          esac
           test -f "$REAL/package.json"
           node - "$REAL/package.json" <<'NODE'
           const fs=require('fs'); const p=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
@@ -143,9 +147,7 @@ jobs:
         run: |
           set -euo pipefail
           test -s android/gradle.properties
-          echo '--- gradle.properties ---'
           cat android/gradle.properties
-          echo '--- newArch references ---'
           grep -R -E 'newArchEnabled|newArch' android/gradle.properties android/settings.gradle android/build.gradle 2>/dev/null || true
       - name: Prepare Gradle 8.13 and Android SDK path
         shell: bash
