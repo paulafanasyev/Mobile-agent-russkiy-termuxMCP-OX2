@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 
 # Forensic rerun marker; no application/build configuration change.
+# Forensic release-evidence trigger: branch push only; no application change.
 jobs:
   test:
     name: Test & Validate
