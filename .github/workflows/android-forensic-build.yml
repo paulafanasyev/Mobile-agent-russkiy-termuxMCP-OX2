@@ -122,7 +122,28 @@ jobs:
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace --info --console=plain
       - name: Assemble release APK
         working-directory: android
-        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace --info --console=plain
+        shell: bash
+        run: |
+          set +e
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace --info --console=plain > "$RUNNER_TEMP/release-build.log" 2>&1
+          rc=$?
+          cat "$RUNNER_TEMP/release-build.log"
+          echo "ASSEMBLE_RELEASE_EXIT_CODE=$rc"
+          exit "$rc"
+      - name: Capture generated release build configuration
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp android/app/build.gradle "$RUNNER_TEMP/generated-app-build.gradle"
+          {
+            echo '=== signing / upload ==='
+            grep -nEi 'signingConfigs|MYAPP_UPLOAD|storeFile|storePassword|keyAlias|keyPassword' android/app/build.gradle || true
+            echo '=== bundle / react ==='
+            grep -nEi 'bundleIn|createBundle|jsAndAssets|enableHermes|react' android/app/build.gradle || true
+            echo '=== assemble release references ==='
+            grep -nEi 'assembleRelease|release' android/app/build.gradle || true
+          } > "$RUNNER_TEMP/generated-app-build-grep.txt"
       - name: Verify APKs
         shell: bash
         run: |
@@ -150,5 +171,8 @@ jobs:
           path: |
             ${{ runner.temp }}/libbox-build.log
             ${{ runner.temp }}/gradle-*.log
+            ${{ runner.temp }}/release-build.log
+            ${{ runner.temp }}/generated-app-build.gradle
+            ${{ runner.temp }}/generated-app-build-grep.txt
             android/hs_err_pid*.log
           if-no-files-found: warn
