@@ -9,6 +9,7 @@ on:
       - main
   workflow_dispatch:
 
+# Forensic rerun marker; no application/build configuration change.
 jobs:
   test:
     name: Test & Validate
