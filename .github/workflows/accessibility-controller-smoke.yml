@@ -17,7 +17,7 @@ env:
 jobs:
   build-and-smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - name: Checkout candidate branch
         uses: actions/checkout@v5
@@ -156,15 +156,15 @@ jobs:
           set -euo pipefail
           ./gradlew :app:tasks --all --no-daemon --console=plain > ../gradle-tasks-all.txt
           grep -Ei 'bundle|jsandassets|hermes|createbundle' ../gradle-tasks-all.txt | tee ../gradle-tasks-bundle-candidates.txt
-      - name: Assemble debug APK
+      - name: Assemble release APK
         id: assemble
         working-directory: android
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace --console=plain
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace --console=plain
       - name: Extract APK and raw merged manifest evidence
         shell: bash
         run: |
           set -euo pipefail
-          APK=$(find android/app/build/outputs/apk/debug -type f -name '*.apk' | head -1)
+          APK=$(find android/app/build/outputs/apk/release -type f -name '*.apk' | head -1)
           test -s "$APK"
           cp "$APK" accessibility-controller-smoke.apk
           sha256sum accessibility-controller-smoke.apk | tee accessibility-controller-apk-sha256.txt
