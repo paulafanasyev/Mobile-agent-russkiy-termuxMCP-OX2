@@ -1,0 +1,178 @@
+name: Android Forensic Build
+
+on:
+  push:
+    branches:
+      - forensic/bedda-legacy-fork
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: -Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
+
+jobs:
+  build:
+    name: Build Android APK (forensic unblock)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+          run_install: false
+      - name: Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Go 1.24.7
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.7'
+          cache: false
+      - name: Android SDK/NDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-21 platforms;android-23 platforms;android-35 platforms;android-36 build-tools;35.0.0 build-tools;36.0.0 ndk;28.0.13004108'
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Build libbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/28.0.13004108"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          bash scripts/build-libbox-android.sh 2>&1 | tee "$RUNNER_TEMP/libbox-build.log"
+          test -s build/native/libbox.aar
+          test -s build/native/libbox.aar.sha256
+          sha256sum -c build/native/libbox.aar.sha256
+          test "$(cat build/native/sing-box-revision.txt)" = "670d7a7693918b765a17c44aee5afb5d47ead390"
+      - name: Prepare local Maven libbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          d=build/native/maven/ru/mirsamozanyatykh/libbox/1.0.0
+          mkdir -p "$d"
+          cp build/native/libbox.aar "$d/libbox-1.0.0.aar"
+          cat > "$d/libbox-1.0.0.pom" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>ru.mirsamozanyatykh</groupId>
+            <artifactId>libbox</artifactId>
+            <version>1.0.0</version>
+            <packaging>aar</packaging>
+          </project>
+          EOF
+      - name: Expo prebuild
+        run: pnpm exec expo prebuild --platform android --clean
+      - name: Pin Gradle without mutating generated gradle.properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
+          sed -i -E 's#^distributionUrl=.*#distributionUrl=https://services.gradle.org/distributions/gradle-8.13-bin.zip#' android/gradle/wrapper/gradle-wrapper.properties
+          test -f android/gradle.properties
+          if grep -Fq 'META-INF/INDEX.LISTorg.gradle.jvmargs=' android/gradle.properties; then
+            echo 'ERROR: malformed gradle.properties concatenation detected' >&2
+            exit 1
+          fi
+          echo 'GRADLE_PROPERTIES_CONCATENATION=PASS'
+      - name: Verify generated Netty packaging configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROPS=android/gradle.properties
+          BUILD=android/app/build.gradle
+          test -f "$PROPS"
+          test -f "$BUILD"
+
+          # Expo generates packagingOptions dynamically from gradle.properties.
+          # Therefore the concrete Netty paths must be verified in PROPS, while
+          # build.gradle must be verified to contain the dynamic bridge.
+          grep -Fxq 'android.packagingOptions.pickFirsts=META-INF/io.netty.versions.properties' "$PROPS"
+          grep -Fxq 'android.packagingOptions.excludes=META-INF/INDEX.LIST' "$PROPS"
+          ! grep -Fq 'META-INF/INDEX.LISTorg.gradle.jvmargs=' "$PROPS"
+          ! grep -Fq 'META-INF/io.netty.versions.propertiesorg.gradle.jvmargs=' "$PROPS"
+
+          if [ "$(tail -c 1 "$PROPS" | od -An -t x1 | tr -d ' \n')" != '0a' ]; then
+            printf '\n' >> "$PROPS"
+          fi
+          test "$(tail -c 1 "$PROPS" | od -An -t x1 | tr -d ' \n')" = '0a'
+
+          grep -Fq 'packagingOptions {' "$BUILD"
+          grep -Fq 'findProperty("android.packagingOptions.$prop")' "$BUILD"
+          grep -Fq 'android.packagingOptions[prop] += it' "$BUILD"
+          echo 'GENERATED_NETTY_PACKAGING=PASS'
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace --info --console=plain -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g"
+      - name: Assemble release APK
+        working-directory: android
+        shell: bash
+        run: |
+          set +e
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace --info --console=plain -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g" > "$RUNNER_TEMP/release-build.log" 2>&1
+          rc=$?
+          cat "$RUNNER_TEMP/release-build.log"
+          echo "ASSEMBLE_RELEASE_EXIT_CODE=$rc"
+          exit "$rc"
+      - name: Capture generated release build configuration
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp android/app/build.gradle "$RUNNER_TEMP/generated-app-build.gradle"
+          {
+            echo '=== signing / upload ==='
+            grep -nEi 'signingConfigs|MYAPP_UPLOAD|storeFile|storePassword|keyAlias|keyPassword' android/app/build.gradle || true
+            echo '=== bundle / react ==='
+            grep -nEi 'bundleIn|createBundle|jsAndAssets|enableHermes|react' android/app/build.gradle || true
+            echo '=== assemble release references ==='
+            grep -nEi 'assembleRelease|release' android/app/build.gradle || true
+          } > "$RUNNER_TEMP/generated-app-build-grep.txt"
+      - name: Verify APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          find android/app/build/outputs/apk -type f -name '*.apk' -print -exec sha256sum {} \;
+          test -s "$(find android/app/build/outputs/apk/debug -type f -name '*.apk' | head -1)"
+          test -s "$(find android/app/build/outputs/apk/release -type f -name '*.apk' | head -1)"
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: mobile-agent-russkiy-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - name: Upload release APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: mobile-agent-russkiy-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: android-forensic-build-diagnostics
+          path: |
+            ${{ runner.temp }}/libbox-build.log
+            ${{ runner.temp }}/gradle-*.log
+            ${{ runner.temp }}/release-build.log
+            ${{ runner.temp }}/generated-app-build.gradle
+            ${{ runner.temp }}/generated-app-build-grep.txt
+            android/hs_err_pid*.log
+          if-no-files-found: warn
