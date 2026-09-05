@@ -11,6 +11,17 @@ import {
 
 type SmokeStatus = 'idle' | 'running' | 'pass' | 'fail';
 
+function findNodeAndParent(nodes: any[], nodeId: string, parent: any | null = null): { node: any; parent: any | null } | null {
+  for (const node of nodes) {
+    if (node?.nodeId === nodeId) return { node, parent };
+    if (Array.isArray(node?.children)) {
+      const found = findNodeAndParent(node.children, nodeId, node);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export default function AccessibilityControllerSmokeScreen() {
   const [status, setStatus] = useState<SmokeStatus>('idle');
   const [targetState, setTargetState] = useState<'OFF' | 'ON'>('OFF');
@@ -46,6 +57,15 @@ export default function AccessibilityControllerSmokeScreen() {
           { timeoutMs: 10000, pollIntervalMs: 250 },
         );
         log(`ACCESSIBILITY_CONTROLLER_TARGET_FOUND node_id=${target.nodeId}`);
+
+        const treeAtTap = await beddaGetTree();
+        const targetContext = findNodeAndParent(treeAtTap, target.nodeId);
+        if (targetContext) {
+          const { node, parent } = targetContext;
+          log(`ACCESSIBILITY_CONTROLLER_TARGET_PROPS node_id=${node.nodeId} class=${node.className ?? ''} text=${JSON.stringify(node.text ?? '')} clickable=${String(node.isClickable)} enabled=${String(node.isEnabled)} bounds=${JSON.stringify(node.bounds ?? null)} parent_class=${parent?.className ?? ''} parent_text=${JSON.stringify(parent?.text ?? '')} parent_clickable=${String(parent?.isClickable ?? null)}`);
+        } else {
+          log(`ACCESSIBILITY_CONTROLLER_TARGET_PROPS node_id=${target.nodeId} context_not_found_on_refresh`);
+        }
 
         const tapped = await beddaTapNode(target.nodeId);
         log(`ACCESSIBILITY_CONTROLLER_TAP_RESULT=${tapped}`);
