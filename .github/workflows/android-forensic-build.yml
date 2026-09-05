@@ -119,13 +119,13 @@ jobs:
           echo 'GENERATED_NETTY_PACKAGING=PASS'
       - name: Assemble debug APK
         working-directory: android
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace --info --console=plain
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace --info --console=plain -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g"
       - name: Assemble release APK
         working-directory: android
         shell: bash
         run: |
           set +e
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace --info --console=plain > "$RUNNER_TEMP/release-build.log" 2>&1
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace --info --console=plain -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g" > "$RUNNER_TEMP/release-build.log" 2>&1
           rc=$?
           cat "$RUNNER_TEMP/release-build.log"
           echo "ASSEMBLE_RELEASE_EXIT_CODE=$rc"
