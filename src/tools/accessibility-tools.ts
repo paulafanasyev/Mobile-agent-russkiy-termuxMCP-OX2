@@ -63,7 +63,7 @@ const uiObserveOutputSchema = z.object({
 })
 
 const uiActOutputSchema = z.object({
-  status: z.enum(['verified', 'executed_unverified', 'accessibility_disabled', 'failed', 'invalid_action', 'unsupported', 'invalid_json', 'out_of_bounds']),
+  status: z.enum(['verified', 'executed_unverified', 'stale_ref', 'accessibility_disabled', 'failed', 'invalid_action', 'unsupported', 'invalid_json', 'out_of_bounds']),
   action: z.string(),
   verified: z.boolean(),
   before: z.array(accessibilityNodeSchema).optional(),
