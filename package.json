@@ -57,7 +57,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.0",
-    "react-native-accessibility-controller": "git+https://github.com/bedda-tech/react-native-accessibility-controller.git#c6f4a8bd017fe504abedf7019b7690fda5004b82",
+    "react-native-accessibility-controller": "git+https://github.com/paulafanasyev/react-native-accessibility-controller.git#10fb8ca7eaf79489faa1adcce00a401c3ca78d65",
     "react-native-css-interop": "^0.2.6",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-get-random-values": "^1.11.0",
