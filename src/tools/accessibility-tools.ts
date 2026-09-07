@@ -10,18 +10,21 @@ const isAccessibilityEnabled = async (): Promise<boolean> => {
 }
 
 const nodeRef = z.string().regex(/^hands:[a-z0-9]+$/)
+const liveNodeId = z.string().regex(/^0(?:\.[0-9]+)*$/)
 
 const rawActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('tap'),
     x: z.number().finite().optional(),
     y: z.number().finite().optional(),
+    nodeId: liveNodeId.optional(),
     nodeRef: nodeRef.optional(),
   }),
   z.object({
     type: z.literal('long_press'),
     x: z.number().finite().optional(),
     y: z.number().finite().optional(),
+    nodeId: liveNodeId.optional(),
     nodeRef: nodeRef.optional(),
     durationMs: z.number().int().min(400).max(3000).optional(),
   }),
@@ -29,7 +32,7 @@ const rawActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('type'),
     text: z.string().max(4096),
-    nodeId: z.string().regex(/^0(?:\.[0-9]+)*$/).optional(),
+    nodeId: liveNodeId.optional(),
     nodeRef: nodeRef.optional(),
   }),
   z.object({ type: z.literal('back') }),
@@ -39,8 +42,8 @@ const rawActionSchema = z.discriminatedUnion('type', [
 
 export const actionSchema = rawActionSchema.superRefine((value, ctx) => {
   if (value.type === 'tap' || value.type === 'long_press') {
-    if (!value.nodeRef && (value.x === undefined || value.y === undefined)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${value.type} requires nodeRef or x/y` })
+    if (!value.nodeRef && !value.nodeId && (value.x === undefined || value.y === undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${value.type} requires nodeRef, nodeId, or x/y` })
     }
   }
   if (value.type === 'type' && !value.nodeId && !value.nodeRef) {
