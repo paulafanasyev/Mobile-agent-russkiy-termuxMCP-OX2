@@ -28,7 +28,9 @@ export function describeNode(node: AccessibilityNode): HandsNodeRef {
 }
 
 function sameText(a: string | null, b: string | null): boolean {
-  return (a ?? '').trim() === (b ?? '').trim()
+  const left = (a ?? '').trim()
+  const right = (b ?? '').trim()
+  return left.length > 0 && left === right
 }
 
 function sameBounds(a: AccessibilityNode['bounds'], b: AccessibilityNode['bounds']): boolean {
