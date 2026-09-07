@@ -11,31 +11,42 @@ const isAccessibilityEnabled = async (): Promise<boolean> => {
 
 const nodeRef = z.string().regex(/^hands:[a-z0-9]+$/)
 
-export const actionSchema = z.discriminatedUnion('type', [
+const rawActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('tap'),
     x: z.number().finite().optional(),
     y: z.number().finite().optional(),
     nodeRef: nodeRef.optional(),
-  }).refine((value) => value.nodeRef !== undefined || (value.x !== undefined && value.y !== undefined), 'tap requires nodeRef or x/y'),
+  }),
   z.object({
     type: z.literal('long_press'),
     x: z.number().finite().optional(),
     y: z.number().finite().optional(),
     nodeRef: nodeRef.optional(),
     durationMs: z.number().int().min(400).max(3000).optional(),
-  }).refine((value) => value.nodeRef !== undefined || (value.x !== undefined && value.y !== undefined), 'long_press requires nodeRef or x/y'),
+  }),
   z.object({ type: z.literal('swipe'), x: z.number().finite(), y: z.number().finite(), x2: z.number().finite(), y2: z.number().finite(), durationMs: z.number().int().min(50).max(2000).optional() }),
   z.object({
     type: z.literal('type'),
     text: z.string().max(4096),
     nodeId: z.string().regex(/^0(?:\.[0-9]+)*$/).optional(),
     nodeRef: nodeRef.optional(),
-  }).refine((value) => value.nodeId !== undefined || value.nodeRef !== undefined, 'type requires nodeId or nodeRef'),
+  }),
   z.object({ type: z.literal('back') }),
   z.object({ type: z.literal('home') }),
   z.object({ type: z.literal('recents') }),
 ])
+
+export const actionSchema = rawActionSchema.superRefine((value, ctx) => {
+  if (value.type === 'tap' || value.type === 'long_press') {
+    if (!value.nodeRef && (value.x === undefined || value.y === undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${value.type} requires nodeRef or x/y` })
+    }
+  }
+  if (value.type === 'type' && !value.nodeId && !value.nodeRef) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'type requires nodeId or nodeRef' })
+  }
+})
 
 export type AccessibilityAction = z.infer<typeof actionSchema>
 
@@ -47,8 +58,8 @@ const accessibilityNodeSchema = z.object({
   className: z.string().nullable(),
   packageName: z.string().nullable(),
   clickable: z.boolean(),
-  editable: z.boolean(),
   enabled: z.boolean(),
+  editable: z.boolean(),
   bounds: z.object({
     left: z.number().int(),
     top: z.number().int(),
