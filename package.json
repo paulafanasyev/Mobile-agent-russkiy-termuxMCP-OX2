@@ -44,6 +44,7 @@
     "expo-sharing": "^57.0.3",
     "expo-speech": "57.0.2",
     "expo-speech-recognition": "57.0.0",
+    "expo-splash-screen": "~57.0.0",
     "expo-splash-screen": "~57.0.2",
     "expo-sqlite": "~57.0.0",
     "expo-status-bar": "~57.0.0",
@@ -57,7 +58,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.0",
-    "react-native-accessibility-controller": "1.4.0",
+    "react-native-accessibility-controller": "git+https://github.com/bedda-tech/react-native-accessibility-controller.git#c6f4a8bd017fe504abedf7019b7690fda5004b82",
     "react-native-css-interop": "^0.2.6",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-get-random-values": "^1.11.0",
@@ -89,27 +90,10 @@
     "typescript": "~6.0.3",
     "vitest": "^4.1.10"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/TecnicalBot/mobile-agent"
-  },
+  "repository": {"type": "git", "url": "https://github.com/TecnicalBot/mobile-agent"},
   "license": "MIT",
-  "scripts": {
-    "start": "expo start",
-    "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "web": "expo start --web",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "expo lint",
-    "postinstall": "node ./scripts/patch-ai-sdk-react-native.js"
-  },
+  "scripts": {"start": "expo start", "reset-project": "node ./scripts/reset-project.js", "android": "expo run:android", "ios": "expo run:ios", "web": "expo start --web", "test": "vitest run", "test:watch": "vitest", "lint": "expo lint", "postinstall": "node ./scripts/patch-ai-sdk-react-native.js"},
   "private": true,
   "packageManager": "pnpm@10.29.2",
-  "expo": {
-    "autolinking": {
-      "nativeModulesDir": "./modules"
-    }
-  }
+  "expo": {"autolinking": {"nativeModulesDir": "./modules"}}
 }
