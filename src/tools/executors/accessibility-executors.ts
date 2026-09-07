@@ -1,10 +1,10 @@
 import {
   HANDS_MAX_TREE_NODES,
-  isAccessibilityEnabled,
   type AccessibilityNode,
 } from '../../../modules/accessibility-agent'
 import {
   nativeGetAccessibilityTree,
+  nativeIsAccessibilityEnabled,
   nativePerformAccessibilityAction,
 } from '../../../modules/accessibility-agent/native'
 import { decorateObservedNodes, resolveRef } from '../../../modules/accessibility-agent/hands-ref-cache'
@@ -26,7 +26,7 @@ async function performAccessibilityAction(
 }
 
 export async function executeUiObserve(maxNodes: number) {
-  const enabled = await isAccessibilityEnabled()
+  const enabled = await nativeIsAccessibilityEnabled()
   if (!enabled) {
     return { status: 'accessibility_disabled', nodes: [] as AccessibilityNode[] }
   }
@@ -94,7 +94,7 @@ export async function executeUiAction(input: {
   expectedPackage?: string
 }) {
   const action = actionSchema.parse(input.action)
-  const enabled = await isAccessibilityEnabled()
+  const enabled = await nativeIsAccessibilityEnabled()
   if (!enabled) {
     return { status: 'accessibility_disabled', action: action.type, verified: false }
   }
