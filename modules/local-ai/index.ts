@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import * as Speech from "expo-speech";
 import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
 import TTSKit from "react-native-tts-kit";
+import { startupMark } from "@/core/startup/trace";
 
 export type MobileAgentVoiceCapabilities = {
   supported: boolean;
@@ -126,3 +127,5 @@ export const LocalAi = requireNativeModule<{
   loadModel(path: string): Promise<Record<string, unknown>>;
   unloadModel(): Promise<void>;
 }>("LocalAi");
+
+startupMark("LOCAL_AI_MODULE");
