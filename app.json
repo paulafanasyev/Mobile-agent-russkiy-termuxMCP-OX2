@@ -58,9 +58,11 @@
           "buildToolsVersion": "36.0.0",
           "usesCleartextTraffic": true,
           "packagingOptions": {
-            "exclude": [
-              "META-INF/INDEX.LIST",
+            "pickFirst": [
               "META-INF/io.netty.versions.properties"
+            ],
+            "exclude": [
+              "META-INF/INDEX.LIST"
             ]
           }
         }
@@ -70,6 +72,7 @@
       "./plugins/with-background-agent",
       "./plugins/with-scheduler-alarm",
       "./plugins/with-libbox",
+      "./plugins/with-startup-instrumentation",
       ["expo-splash-screen", {
         "backgroundColor": "#5996FF",
         "image": "./assets/images/splash-icon.png",

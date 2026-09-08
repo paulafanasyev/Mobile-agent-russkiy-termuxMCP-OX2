@@ -6,6 +6,9 @@ import { useChat } from "@/hooks/use-chat";
 import { useTheme } from "@/hooks/use-theme";
 // Voice remains attached to the existing working chat surface; there is no dedicated Svetlana screen.
 import { SvetlanaVoice } from "../../../modules/local-ai";
+import { startupMark } from "@/core/startup/trace";
+
+startupMark("VOICE_CONTROL_MODULE");
 
 async function ensureMicrophonePermission() {
   if (Platform.OS !== "android") return true;
