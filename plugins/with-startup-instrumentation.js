@@ -6,26 +6,63 @@ function findClassBodyEnd(source, classStart) {
   const open = source.indexOf("{", classStart);
   if (open < 0) throw new Error("[startup-instrumentation] Missing MainActivity class body");
   let depth = 0;
-  let inString = false;
+  let mode = "code";
   let quote = "";
   let escaped = false;
   for (let i = open; i < source.length; i += 1) {
     const ch = source[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === quote) inString = false;
+    const next = source[i + 1];
+
+    if (mode === "lineComment") {
+      if (ch === "\n" || ch === "\r") mode = "code";
       continue;
     }
-    if (ch === '"' || ch === "'") {
-      inString = true;
-      quote = ch;
+    if (mode === "blockComment") {
+      if (ch === "*" && next === "/") {
+        mode = "code";
+        i += 1;
+      }
       continue;
     }
+    if (mode === "string" || mode === "char") {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === quote) {
+        mode = "code";
+      }
+      continue;
+    }
+
+    if (ch === "/" && next === "/") {
+      mode = "lineComment";
+      i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      mode = "blockComment";
+      i += 1;
+      continue;
+    }
+    if (ch === '"') {
+      mode = "string";
+      quote = '"';
+      escaped = false;
+      continue;
+    }
+    if (ch === "'") {
+      mode = "char";
+      quote = "'";
+      escaped = false;
+      continue;
+    }
+
     if (ch === "{") depth += 1;
     if (ch === "}") {
       depth -= 1;
       if (depth === 0) return i;
+      if (depth < 0) throw new Error("[startup-instrumentation] MainActivity brace depth underflow");
     }
   }
   throw new Error("[startup-instrumentation] Unbalanced MainActivity braces");
