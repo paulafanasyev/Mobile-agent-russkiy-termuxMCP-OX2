@@ -260,6 +260,14 @@ function SplashScreenController() {
   return null;
 }
 
+function TracedAppStateProvider({ children }: { children: React.ReactNode }) {
+  startupMark("APPSTATE_RENDER_BEGIN");
+  useEffect(() => {
+    startupMark("APPSTATE_RENDER_END");
+  }, []);
+  return <AppStateProvider>{children}</AppStateProvider>;
+}
+
 function TracedSlot() {
   startupMark("SLOT_RENDER");
   return <Slot />;
@@ -283,7 +291,7 @@ export default function MainLayout() {
               databaseName="mobile-agent.db"
               onInit={tracedMigrateAppDatabase}
             >
-              <AppStateProvider>
+              <TracedAppStateProvider>
                 <UpdateProvider>
                   <SplashScreenController />
                   <NotificationObserver />
@@ -291,7 +299,7 @@ export default function MainLayout() {
                   <ReleaseUpdateBanner />
                   <TracedSlot />
                 </UpdateProvider>
-              </AppStateProvider>
+              </TracedAppStateProvider>
             </SQLiteProvider>
           </AppQueryProvider>
         </ThemeProvider>
