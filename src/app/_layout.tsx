@@ -23,7 +23,7 @@ import {
 import * as SplashScreen from "expo-splash-screen";
 import { SQLiteProvider } from "expo-sqlite";
 import { X } from "lucide-react-native";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -260,7 +260,7 @@ function SplashScreenController() {
   return null;
 }
 
-function TracedAppStateProvider({ children }: { children: React.ReactNode }) {
+function TracedAppStateProvider({ children }: { children: ReactNode }) {
   startupMark("APPSTATE_RENDER_BEGIN");
   useEffect(() => {
     startupMark("APPSTATE_RENDER_END");
