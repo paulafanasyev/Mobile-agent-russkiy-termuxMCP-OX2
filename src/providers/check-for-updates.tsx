@@ -15,6 +15,7 @@ import {
   checkForGitHubReleaseUpdate,
   installAvailableRelease,
 } from "@/modules/updates/github-release";
+import { startupMark } from "@/core/startup/trace";
 
 type UpdateContextType = {
   release: AvailableRelease | null;
@@ -37,6 +38,7 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const checkForUpdates = useCallback(async () => {
+    startupMark("UPDATE_CHECK_BEGIN");
     try {
       setChecking(true);
 
