@@ -6,6 +6,12 @@ const native = {
   perform: vi.fn(),
 }
 
+vi.mock('../../../modules/accessibility-agent/native', () => ({
+  nativeGetAccessibilityTree: native.getTree,
+  nativeIsAccessibilityEnabled: native.isEnabled,
+  nativePerformAccessibilityAction: native.perform,
+}))
+
 vi.mock('expo', () => ({
   requireNativeModule: () => native,
 }))

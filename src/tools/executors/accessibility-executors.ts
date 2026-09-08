@@ -1,12 +1,13 @@
 import {
   HANDS_MAX_TREE_NODES,
-  isAccessibilityEnabled,
   type AccessibilityNode,
 } from '../../../modules/accessibility-agent'
 import {
   nativeGetAccessibilityTree,
+  nativeIsAccessibilityEnabled,
   nativePerformAccessibilityAction,
 } from '../../../modules/accessibility-agent/native'
+import { decorateObservedNodes, resolveRef } from '../../../modules/accessibility-agent/hands-ref-cache'
 import { actionSchema, type AccessibilityAction } from '../accessibility-tools'
 
 type AccessibilityExecutionResult = {
@@ -25,13 +26,15 @@ async function performAccessibilityAction(
 }
 
 export async function executeUiObserve(maxNodes: number) {
-  const enabled = await isAccessibilityEnabled()
+  const enabled = await nativeIsAccessibilityEnabled()
   if (!enabled) {
     return { status: 'accessibility_disabled', nodes: [] as AccessibilityNode[] }
   }
+
+  const nodes = await getAccessibilityTree(maxNodes)
   return {
     status: 'observed',
-    nodes: await getAccessibilityTree(maxNodes),
+    nodes: decorateObservedNodes(nodes),
   }
 }
 
@@ -70,6 +73,20 @@ function treeMatchesCausally(
   return textTransitioned && packageTransitioned
 }
 
+function resolveActionNode(action: AccessibilityAction, freshNodes: AccessibilityNode[]): AccessibilityNode | null {
+  if (!('nodeRef' in action) || !action.nodeRef) return null
+  return resolveRef(action.nodeRef, freshNodes)
+}
+
+function prepareNativeAction(action: AccessibilityAction, freshNodes: AccessibilityNode[]): AccessibilityAction | null {
+  const resolved = resolveActionNode(action, freshNodes)
+  if ('nodeRef' in action && action.nodeRef) {
+    if (!resolved) return null
+    return { ...action, nodeId: resolved.id }
+  }
+  return action
+}
+
 export async function executeUiAction(input: {
   action: unknown
   waitMs: number
@@ -77,14 +94,25 @@ export async function executeUiAction(input: {
   expectedPackage?: string
 }) {
   const action = actionSchema.parse(input.action)
-  const enabled = await isAccessibilityEnabled()
+  const enabled = await nativeIsAccessibilityEnabled()
   if (!enabled) {
     return { status: 'accessibility_disabled', action: action.type, verified: false }
   }
 
   const before = await getAccessibilityTree(HANDS_MAX_TREE_NODES)
-  const result = await performAccessibilityAction(action)
-  if (result.status !== 'executed') {
+  const nativeAction = prepareNativeAction(action, before)
+  if (!nativeAction) {
+    return {
+      status: 'stale_ref',
+      action: action.type,
+      verified: false,
+      before,
+      after: before,
+    }
+  }
+
+  const result = await performAccessibilityAction(nativeAction)
+  if (result.status !== 'executed' && result.status !== 'verified') {
     return { ...result, verified: false, before, after: before }
   }
 

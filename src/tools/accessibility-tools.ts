@@ -9,27 +9,60 @@ const isAccessibilityEnabled = async (): Promise<boolean> => {
   return module.isAccessibilityEnabled()
 }
 
-export const actionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('tap'), x: z.number().finite(), y: z.number().finite() }),
-  z.object({ type: z.literal('long_press'), x: z.number().finite(), y: z.number().finite(), durationMs: z.number().int().min(400).max(3000).optional() }),
+const nodeRef = z.string().regex(/^hands:[a-z0-9]+$/)
+const liveNodeId = z.string().regex(/^0(?:\.[0-9]+)*$/)
+
+const rawActionSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('tap'),
+    x: z.number().finite().optional(),
+    y: z.number().finite().optional(),
+    nodeId: liveNodeId.optional(),
+    nodeRef: nodeRef.optional(),
+  }),
+  z.object({
+    type: z.literal('long_press'),
+    x: z.number().finite().optional(),
+    y: z.number().finite().optional(),
+    nodeId: liveNodeId.optional(),
+    nodeRef: nodeRef.optional(),
+    durationMs: z.number().int().min(400).max(3000).optional(),
+  }),
   z.object({ type: z.literal('swipe'), x: z.number().finite(), y: z.number().finite(), x2: z.number().finite(), y2: z.number().finite(), durationMs: z.number().int().min(50).max(2000).optional() }),
-  z.object({ type: z.literal('type'), text: z.string().max(4096), nodeId: z.string().regex(/^0(?:\.[0-9]+)*$/) }),
+  z.object({
+    type: z.literal('type'),
+    text: z.string().max(4096),
+    nodeId: liveNodeId.optional(),
+    nodeRef: nodeRef.optional(),
+  }),
   z.object({ type: z.literal('back') }),
   z.object({ type: z.literal('home') }),
   z.object({ type: z.literal('recents') }),
 ])
 
+export const actionSchema = rawActionSchema.superRefine((value, ctx) => {
+  if (value.type === 'tap' || value.type === 'long_press') {
+    if (!value.nodeRef && !value.nodeId && (value.x === undefined || value.y === undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${value.type} requires nodeRef, nodeId, or x/y` })
+    }
+  }
+  if (value.type === 'type' && !value.nodeId && !value.nodeRef) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'type requires nodeId or nodeRef' })
+  }
+})
+
 export type AccessibilityAction = z.infer<typeof actionSchema>
 
 const accessibilityNodeSchema = z.object({
   id: z.string(),
+  ref: nodeRef.optional(),
   text: z.string().nullable(),
   contentDescription: z.string().nullable(),
   className: z.string().nullable(),
   packageName: z.string().nullable(),
   clickable: z.boolean(),
-  editable: z.boolean(),
   enabled: z.boolean(),
+  editable: z.boolean(),
   bounds: z.object({
     left: z.number().int(),
     top: z.number().int(),
@@ -44,7 +77,7 @@ const uiObserveOutputSchema = z.object({
 })
 
 const uiActOutputSchema = z.object({
-  status: z.enum(['verified', 'executed_unverified', 'accessibility_disabled', 'failed', 'invalid_action', 'unsupported', 'invalid_json', 'out_of_bounds']),
+  status: z.enum(['verified', 'executed_unverified', 'stale_ref', 'accessibility_disabled', 'failed', 'invalid_action', 'unsupported', 'invalid_json', 'out_of_bounds']),
   action: z.string(),
   verified: z.boolean(),
   before: z.array(accessibilityNodeSchema).optional(),
@@ -66,7 +99,7 @@ export const ACCESSIBILITY_TOOLS: ToolContractSpec<unknown, unknown>[] = [
   {
     id: 'device.ui.observe',
     version: '1.0.0',
-    description: 'Читает доступное Android UI-дерево текущего экрана для точного выбора элементов.',
+    description: 'Читает доступное Android UI-дерево текущего экрана и выдаёт короткоживущие стабильные ref для последующего действия.',
     inputSchema: uiObserveSchema,
     outputSchema: uiObserveOutputSchema,
     requiredCapability: 'NO_PRIVILEGE',
@@ -79,7 +112,7 @@ export const ACCESSIBILITY_TOOLS: ToolContractSpec<unknown, unknown>[] = [
   {
     id: 'device.ui.act',
     version: '1.0.0',
-    description: 'Выполняет одно атомарное действие Android UI и возвращает наблюдение после него.',
+    description: 'Выполняет одно атомарное Android UI-действие; nodeRef перед действием повторно разрешается по описателю, а stale/неоднозначная ссылка закрывается без действия.',
     inputSchema: uiActSchema,
     outputSchema: uiActOutputSchema,
     requiredCapability: 'NO_PRIVILEGE',

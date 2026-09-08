@@ -69,10 +69,33 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
+
+          cleanup_evidence() {
+            rc=$?
+            adb devices -l > adb-devices.txt 2>&1 || true
+            adb shell pidof ru.mirsamozanyatykh.mobileagent > pid.txt 2>&1 || true
+            adb shell dumpsys activity activities | tr -d '\r' > resumed.txt 2>&1 || true
+            adb shell dumpsys window | tr -d '\r' > focus.txt 2>&1 || true
+            adb shell dumpsys package ru.mirsamozanyatykh.mobileagent | tr -d '\r' > package-state.txt 2>&1 || true
+            adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
+            adb shell cat /sdcard/ui.xml > ui-dump.xml 2>/dev/null || true
+            adb logcat -d -v time > full-logcat.txt 2>&1 || true
+            grep -E 'FATAL EXCEPTION|AndroidRuntime|UnsatisfiedLinkError|ReactNativeJS|Unable to start activity|Process: ru\.mirsamozanyatykh\.mobileagent' full-logcat.txt > crash-evidence.txt || true
+            echo "STRICT_SMOKE_EXIT=$rc" | tee smoke-exit.txt
+            exit "$rc"
+          }
+          trap cleanup_evidence EXIT
+
           adb install -r smoke.apk
           adb logcat -c
           adb shell am force-stop ru.mirsamozanyatykh.mobileagent || true
-          adb shell am start -W -n ru.mirsamozanyatykh.mobileagent/.MainActivity
+
+          set +e
+          adb shell am start -W -n ru.mirsamozanyatykh.mobileagent/.MainActivity > launch.txt 2>&1
+          START_RC=$?
+          set -e
+          test "$START_RC" -eq 0
+
           PID=''
           for _ in $(seq 1 30); do
             PID=$(adb shell pidof ru.mirsamozanyatykh.mobileagent 2>/dev/null | tr -d '\r\n ' || true)
@@ -80,15 +103,17 @@ jobs:
             sleep 2
           done
           test -n "$PID"
+
           adb exec-out screencap -p > screenshot.png
           adb shell dumpsys activity activities | tr -d '\r' > resumed.txt
           adb shell dumpsys window | tr -d '\r' > focus.txt
           grep -q 'ru.mirsamozanyatykh.mobileagent' resumed.txt
           grep -q 'mResumedActivity\|topResumedActivity' resumed.txt
+
           adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
           adb shell cat /sdcard/ui.xml > ui-dump.xml 2>/dev/null || true
           adb logcat -d -v time > full-logcat.txt
-          grep -E 'FATAL EXCEPTION|AndroidRuntime' full-logcat.txt > crash-evidence.txt || true
+          grep -E 'FATAL EXCEPTION|AndroidRuntime|UnsatisfiedLinkError|ReactNativeJS|Unable to start activity|Process: ru\.mirsamozanyatykh\.mobileagent' full-logcat.txt > crash-evidence.txt || true
           test ! -s crash-evidence.txt
           echo 'STRICT_SMOKE=PASSED'
           PROBE_EOF
@@ -119,4 +144,9 @@ jobs:
             ui-dump.xml
             full-logcat.txt
             crash-evidence.txt
+            launch.txt
+            pid.txt
+            package-state.txt
+            adb-devices.txt
+            smoke-exit.txt
           if-no-files-found: warn

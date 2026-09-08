@@ -119,6 +119,8 @@ export const MobileAgentVoice = {
   },
 };
 
+export const SvetlanaVoice = MobileAgentVoice;
+
 export const LocalAi = requireNativeModule<{
   nativeStatus(): Promise<Record<string, unknown>>;
   loadModel(path: string): Promise<Record<string, unknown>>;

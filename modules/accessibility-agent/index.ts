@@ -1,22 +1,3 @@
-import {
-  getAccessibilityTree as beddaGetAccessibilityTree,
-  findNode,
-  waitForNode,
-  onAccessibilityEvent,
-  onWindowChange,
-  isServiceEnabled,
-  requestServiceEnable,
-  tapNode,
-  longPressNode,
-  setNodeText,
-  scrollNode,
-  tap,
-  longPress,
-  swipe,
-  globalAction,
-  openApp,
-} from "react-native-accessibility-controller";
-
 export const HANDS_MAX_TREE_NODES = 200;
 export const HANDS_MAX_TEXT_LENGTH = 4096;
 
@@ -35,17 +16,21 @@ export type AccessibilityNode = {
   bounds: { left: number; top: number; right: number; bottom: number };
 };
 
+async function controller() {
+  return import('react-native-accessibility-controller');
+}
+
 function flatten(nodes: any[], out: AccessibilityNode[] = []): AccessibilityNode[] {
   for (const node of nodes) {
     out.push({
       id: node.nodeId,
-      text: typeof node.text === "string" ? node.text.slice(0, HANDS_MAX_TEXT_LENGTH) : null,
+      text: typeof node.text === 'string' ? node.text.slice(0, HANDS_MAX_TEXT_LENGTH) : null,
       contentDescription:
-        typeof node.contentDescription === "string"
+        typeof node.contentDescription === 'string'
           ? node.contentDescription.slice(0, HANDS_MAX_TEXT_LENGTH)
           : null,
       className: node.className ?? null,
-      packageName: null,
+      packageName: node.packageName ?? null,
       clickable: node.isClickable === true,
       scrollable: node.isScrollable === true,
       editable: node.isEditable === true,
@@ -61,11 +46,13 @@ function flatten(nodes: any[], out: AccessibilityNode[] = []): AccessibilityNode
 }
 
 export async function isAccessibilityEnabled(): Promise<boolean> {
+  const { isServiceEnabled } = await controller();
   return isServiceEnabled();
 }
 
 export async function getAccessibilityTree(maxNodes = HANDS_MAX_TREE_NODES): Promise<AccessibilityNode[]> {
-  const tree = await beddaGetAccessibilityTree();
+  const { getAccessibilityTree } = await controller();
+  const tree = await getAccessibilityTree();
   return flatten(tree).slice(0, Math.max(1, Math.min(maxNodes, HANDS_MAX_TREE_NODES)));
 }
 
@@ -76,6 +63,7 @@ export async function findAccessibilityNode(query: {
   isChecked?: boolean;
   isEnabled?: boolean;
 }): Promise<AccessibilityNode | null> {
+  const { findNode } = await controller();
   const node = await findNode(query);
   return node ? flatten([node])[0] ?? null : null;
 }
@@ -90,44 +78,23 @@ export async function waitForAccessibilityNode(
   },
   timeoutMs = 10000,
 ): Promise<AccessibilityNode> {
+  const { waitForNode } = await controller();
   const node = await waitForNode(query, { timeoutMs, pollIntervalMs: 250 });
   return flatten([node])[0];
 }
 
-export function subscribeToAccessibilityEvents(callback: (event: unknown) => void) {
+export async function subscribeToAccessibilityEvents(callback: (event: unknown) => void) {
+  const { onAccessibilityEvent } = await controller();
   return onAccessibilityEvent(callback as never);
 }
 
-export function subscribeToWindowChanges(callback: (window: unknown) => void) {
+export async function subscribeToWindowChanges(callback: (window: unknown) => void) {
+  const { onWindowChange } = await controller();
   return onWindowChange(callback as never);
 }
 
 export async function openAccessibilitySettings(): Promise<boolean> {
+  const { requestServiceEnable } = await controller();
   await requestServiceEnable();
   return true;
-}
-
-export async function performAccessibilityAction(action: any): Promise<{ status: string; action: string }> {
-  try {
-    const type = String(action?.type ?? "unknown");
-    let ok = false;
-    switch (type) {
-      case "back": ok = await globalAction("back"); break;
-      case "home": ok = await globalAction("home"); break;
-      case "recents": ok = await globalAction("recents"); break;
-      case "notifications": ok = await globalAction("notifications"); break;
-      case "quick_settings": ok = await globalAction("quickSettings"); break;
-      case "power_dialog": ok = await globalAction("powerDialog"); break;
-      case "tap": ok = action.nodeId ? await tapNode(action.nodeId) : await tap(action.x, action.y); break;
-      case "long_press": ok = action.nodeId ? await longPressNode(action.nodeId) : await longPress(action.x, action.y); break;
-      case "swipe": ok = await swipe(action.x, action.y, action.x2, action.y2, action.durationMs ?? 300); break;
-      case "type": ok = await setNodeText(action.nodeId, String(action.text ?? "").slice(0, HANDS_MAX_TEXT_LENGTH)); break;
-      case "scroll": ok = await scrollNode(action.nodeId, action.direction ?? "down"); break;
-      case "open_app": ok = await openApp(action.packageName); break;
-      default: return { status: "unsupported", action: type };
-    }
-    return { status: ok === true ? "verified" : "failed", action: type };
-  } catch {
-    return { status: "failed", action: String(action?.type ?? "unknown") };
-  }
 }
