@@ -1,6 +1,8 @@
-// Custom entry point: registers the headless scheduler wake task before
-// starting the normal app so the native alarm receiver can run the scheduler
-// even when the app process was killed.
+import { startupMark } from "./src/core/startup/trace";
+
+startupMark("JS_ENTRY");
 import "./src/modules/scheduler/headless-registration";
+startupMark("HEADLESS_REGISTRATION_IMPORTED");
 
 import "expo-router/entry";
+startupMark("ROUTER_ENTRY_IMPORTED");
