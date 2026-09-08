@@ -4,6 +4,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useTheme } from "@/hooks/use-theme";
 import { DismissibleBanner } from "@/components/ui/dismissible-banner";
 import { migrateAppDatabase } from "@/core/db/database";
+import { startupMark } from "@/core/startup/trace";
 import { AppStateProvider } from "@/providers/app-state";
 import { UpdateProvider, useUpdate } from "@/providers/check-for-updates";
 import { AppQueryProvider } from "@/providers/query-provider";
@@ -28,6 +29,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "./global.css";
 
+startupMark("ROOT_LAYOUT_MODULE");
 SplashScreen.preventAutoHideAsync();
 
 Notifications.setNotificationHandler({
@@ -46,6 +48,7 @@ Notifications.setNotificationHandler({
     };
   },
 });
+startupMark("NOTIF_HANDLER_SET");
 
 function NotificationObserver() {
   const { resolveNotificationApproval, selectConversation } = useChat();
@@ -249,14 +252,28 @@ function ReleaseUpdateBanner() {
 
 function SplashScreenController() {
   useEffect(() => {
+    startupMark("FIRST_EFFECT");
     SplashScreen.hide();
+    startupMark("SPLASH_HIDE");
   }, []);
 
   return null;
 }
 
+function TracedSlot() {
+  startupMark("SLOT_RENDER");
+  return <Slot />;
+}
+
 export default function MainLayout() {
+  startupMark("ROOT_LAYOUT_RENDER");
   const colorScheme = useColorScheme();
+  const tracedMigrateAppDatabase = async (db: Parameters<typeof migrateAppDatabase>[0]) => {
+    startupMark("SQLITE_INIT_BEGIN");
+    await migrateAppDatabase(db);
+    startupMark("SQLITE_INIT_END");
+  };
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
@@ -264,7 +281,7 @@ export default function MainLayout() {
           <AppQueryProvider>
             <SQLiteProvider
               databaseName="mobile-agent.db"
-              onInit={migrateAppDatabase}
+              onInit={tracedMigrateAppDatabase}
             >
               <AppStateProvider>
                 <UpdateProvider>
@@ -272,7 +289,7 @@ export default function MainLayout() {
                   <NotificationObserver />
                   <InAppNotificationBanner />
                   <ReleaseUpdateBanner />
-                  <Slot />
+                  <TracedSlot />
                 </UpdateProvider>
               </AppStateProvider>
             </SQLiteProvider>
