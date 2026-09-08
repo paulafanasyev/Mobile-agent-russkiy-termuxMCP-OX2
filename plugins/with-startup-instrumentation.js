@@ -12,6 +12,13 @@ function injectOnce(source, needle, insertion, label, offset = 0) {
   return source.slice(0, at) + insertion + source.slice(at);
 }
 
+function appendBeforeFinalBrace(source, insertion, label) {
+  if (source.includes(insertion)) return source;
+  const index = source.lastIndexOf("}");
+  if (index === -1) throw new Error(`[startup-instrumentation] Missing final class brace: ${label}`);
+  return source.slice(0, index) + insertion + source.slice(index);
+}
+
 function withStartupInstrumentation(config) {
   return withMainActivity(config, (mod) => {
     const source = mod.modResults.contents;
@@ -26,40 +33,12 @@ function withStartupInstrumentation(config) {
       let out = source;
       const classMatch = out.match(/class MainActivity[^\{]*\{/);
       if (!classMatch) throw new Error("[startup-instrumentation] Missing Kotlin MainActivity class body");
-      out = injectOnce(
-        out,
-        classMatch[0],
-        `\n  private var ox2FirstFrameLogged = false\n`,
-        "Kotlin MainActivity class body",
-        classMatch[0].length,
-      );
-      out = injectOnce(
-        out,
-        "override fun onCreate(savedInstanceState: Bundle?) {",
-        `\n    android.util.Log.i("${TAG}", "ANDROID_ON_CREATE elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n`,
-        "onCreate",
-        "override fun onCreate(savedInstanceState: Bundle?) {".length,
-      );
-      out = injectOnce(
-        out,
-        "override fun onResume() {",
-        `\n    android.util.Log.i("${TAG}", "ANDROID_ON_RESUME elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n    if (!ox2FirstFrameLogged) {\n      ox2FirstFrameLogged = true\n      android.view.Choreographer.getInstance().postFrameCallback { frameTimeNanos ->\n        android.util.Log.i("${TAG}", "ANDROID_FIRST_FRAME frameTimeNanos=" + frameTimeNanos + " elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n      }\n    }\n`,
-        "onResume",
-        "override fun onResume() {".length,
-      );
-      out = injectOnce(
-        out,
-        "override fun reportFullyDrawn()",
-        `\n    android.util.Log.i("${TAG}", "ANDROID_REPORT_FULLY_DRAWN elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n`,
-        "reportFullyDrawn",
-        0,
-      );
-      if (!out.includes("ANDROID_REPORT_FULLY_DRAWN")) {
-        const resumeClose = out.indexOf("override fun onResume() {");
-        if (resumeClose === -1) throw new Error("[startup-instrumentation] Missing onResume for reportFullyDrawn fallback");
-        const bodyStart = out.indexOf("\n", resumeClose) + 1;
-        out = out.slice(0, bodyStart) + `    android.util.Log.i("${TAG}", "ANDROID_REPORT_FULLY_DRAWN elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n` + out.slice(bodyStart);
-      }
+      out = injectOnce(out, classMatch[0], `\n  private var ox2FirstFrameLogged = false\n`, "Kotlin MainActivity class body", classMatch[0].length);
+      const onCreate = "override fun onCreate(savedInstanceState: Bundle?) {";
+      out = injectOnce(out, onCreate, `\n    android.util.Log.i("${TAG}", "ANDROID_ON_CREATE elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n`, "onCreate", onCreate.length);
+      const onResume = "override fun onResume() {";
+      out = injectOnce(out, onResume, `\n    android.util.Log.i("${TAG}", "ANDROID_ON_RESUME elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n    if (!ox2FirstFrameLogged) {\n      ox2FirstFrameLogged = true\n      android.view.Choreographer.getInstance().postFrameCallback { frameTimeNanos ->\n        android.util.Log.i("${TAG}", "ANDROID_FIRST_FRAME frameTimeNanos=" + frameTimeNanos + " elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n      }\n    }\n`, "onResume", onResume.length);
+      out = appendBeforeFinalBrace(out, `\n  override fun reportFullyDrawn() {\n    super.reportFullyDrawn()\n    android.util.Log.i("${TAG}", "ANDROID_REPORT_FULLY_DRAWN elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n  }\n`, "Kotlin reportFullyDrawn");
       mod.modResults.contents = out;
       return mod;
     }
@@ -68,11 +47,11 @@ function withStartupInstrumentation(config) {
     const classMatch = out.match(/public class MainActivity[^\{]*\{/);
     if (!classMatch) throw new Error("[startup-instrumentation] Missing Java MainActivity class body");
     out = injectOnce(out, classMatch[0], `\n    private boolean ox2FirstFrameLogged = false;\n`, "Java MainActivity class body", classMatch[0].length);
-    out = injectOnce(out, "protected void onCreate(Bundle savedInstanceState) {", `\n        android.util.Log.i("${TAG}", "ANDROID_ON_CREATE elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n`, "onCreate", "protected void onCreate(Bundle savedInstanceState) {".length);
-    out = injectOnce(out, "protected void onResume() {", `\n        android.util.Log.i("${TAG}", "ANDROID_ON_RESUME elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n        if (!ox2FirstFrameLogged) {\n            ox2FirstFrameLogged = true;\n            android.view.Choreographer.getInstance().postFrameCallback(frameTimeNanos -> android.util.Log.i("${TAG}", "ANDROID_FIRST_FRAME frameTimeNanos=" + frameTimeNanos + " elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis()));\n        }\n`, "onResume", "protected void onResume() {".length);
-    if (!out.includes("ANDROID_REPORT_FULLY_DRAWN")) {
-      out = injectOnce(out, "protected void onResume() {", `\n        android.util.Log.i("${TAG}", "ANDROID_REPORT_FULLY_DRAWN elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n`, "reportFullyDrawn marker", "protected void onResume() {".length);
-    }
+    const onCreate = "protected void onCreate(Bundle savedInstanceState) {";
+    out = injectOnce(out, onCreate, `\n        android.util.Log.i("${TAG}", "ANDROID_ON_CREATE elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n`, "onCreate", onCreate.length);
+    const onResume = "protected void onResume() {";
+    out = injectOnce(out, onResume, `\n        android.util.Log.i("${TAG}", "ANDROID_ON_RESUME elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n        if (!ox2FirstFrameLogged) {\n            ox2FirstFrameLogged = true;\n            android.view.Choreographer.getInstance().postFrameCallback(frameTimeNanos -> android.util.Log.i("${TAG}", "ANDROID_FIRST_FRAME frameTimeNanos=" + frameTimeNanos + " elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis()));\n        }\n`, "onResume", onResume.length);
+    out = appendBeforeFinalBrace(out, `\n    @Override\n    public void reportFullyDrawn() {\n        super.reportFullyDrawn();\n        android.util.Log.i("${TAG}", "ANDROID_REPORT_FULLY_DRAWN elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n    }\n`, "Java reportFullyDrawn");
     mod.modResults.contents = out;
     return mod;
   });
