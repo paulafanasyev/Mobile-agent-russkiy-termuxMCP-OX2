@@ -2,21 +2,47 @@ const { withMainActivity } = require("expo/config-plugins");
 
 const TAG = "OX2_STARTUP";
 
+function findClassBodyEnd(source, classStart) {
+  const open = source.indexOf("{", classStart);
+  if (open < 0) throw new Error("[startup-instrumentation] Missing MainActivity class body");
+  let depth = 0;
+  let inString = false;
+  let quote = "";
+  let escaped = false;
+  for (let i = open; i < source.length; i += 1) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === quote) inString = false;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      quote = ch;
+      continue;
+    }
+    if (ch === "{") depth += 1;
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  throw new Error("[startup-instrumentation] Unbalanced MainActivity braces");
+}
+
 function injectOnce(source, needle, insertion, label, offset = 0) {
   if (source.includes(insertion)) return source;
   const index = source.indexOf(needle);
-  if (index === -1) {
-    throw new Error(`[startup-instrumentation] Missing MainActivity anchor: ${label}`);
-  }
+  if (index === -1) throw new Error(`[startup-instrumentation] Missing MainActivity anchor: ${label}`);
   const at = index + offset;
   return source.slice(0, at) + insertion + source.slice(at);
 }
 
-function appendBeforeFinalBrace(source, insertion, label) {
+function appendBeforeClassBrace(source, insertion, classStart, label) {
   if (source.includes(insertion)) return source;
-  const index = source.lastIndexOf("}");
-  if (index === -1) throw new Error(`[startup-instrumentation] Missing final class brace: ${label}`);
-  return source.slice(0, index) + insertion + source.slice(index);
+  const end = findClassBodyEnd(source, classStart);
+  return source.slice(0, end) + insertion + source.slice(end);
 }
 
 function withStartupInstrumentation(config) {
@@ -24,34 +50,32 @@ function withStartupInstrumentation(config) {
     const source = mod.modResults.contents;
     const isKotlin = mod.modResults.language === "kt" || mod.modResults.path.endsWith("MainActivity.kt");
     const isJava = mod.modResults.language === "java" || mod.modResults.path.endsWith("MainActivity.java");
-
     if (!isKotlin && !isJava) {
       throw new Error(`[startup-instrumentation] Unsupported MainActivity language: ${mod.modResults.path}`);
     }
 
+    const classRe = isKotlin ? /class MainActivity[^\{]*\{/ : /public class MainActivity[^\{]*\{/;
+    const classMatch = source.match(classRe);
+    if (!classMatch || classMatch.index == null) {
+      throw new Error(`[startup-instrumentation] Missing ${isKotlin ? "Kotlin" : "Java"} MainActivity class body`);
+    }
+    const classStart = classMatch.index;
+
     if (isKotlin) {
       let out = source;
-      const classMatch = out.match(/class MainActivity[^\{]*\{/);
-      if (!classMatch) throw new Error("[startup-instrumentation] Missing Kotlin MainActivity class body");
       out = injectOnce(out, classMatch[0], `\n  private var ox2FirstFrameLogged = false\n`, "Kotlin MainActivity class body", classMatch[0].length);
       const onCreate = "override fun onCreate(savedInstanceState: Bundle?) {";
-      out = injectOnce(out, onCreate, `\n    android.util.Log.i("${TAG}", "ANDROID_ON_CREATE elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n`, "onCreate", onCreate.length);
-      const onResume = "override fun onResume() {";
-      out = injectOnce(out, onResume, `\n    android.util.Log.i("${TAG}", "ANDROID_ON_RESUME elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n    if (!ox2FirstFrameLogged) {\n      ox2FirstFrameLogged = true\n      android.view.Choreographer.getInstance().postFrameCallback { frameTimeNanos ->\n        android.util.Log.i("${TAG}", "ANDROID_FIRST_FRAME frameTimeNanos=" + frameTimeNanos + " elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n      }\n    }\n`, "onResume", onResume.length);
-      out = appendBeforeFinalBrace(out, `\n  override fun reportFullyDrawn() {\n    super.reportFullyDrawn()\n    android.util.Log.i("${TAG}", "ANDROID_REPORT_FULLY_DRAWN elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n  }\n`, "Kotlin reportFullyDrawn");
+      out = injectOnce(out, onCreate, `\n    android.util.Log.i("${TAG}", "ANDROID_ON_CREATE elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n    if (!ox2FirstFrameLogged) {\n      ox2FirstFrameLogged = true\n      android.view.Choreographer.getInstance().postFrameCallback { frameTimeNanos ->\n        android.util.Log.i("${TAG}", "ANDROID_FIRST_FRAME frameTimeNanos=" + frameTimeNanos + " elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n      }\n    }\n`, "onCreate", onCreate.length);
+      out = appendBeforeClassBrace(out, `\n  override fun reportFullyDrawn() {\n    super.reportFullyDrawn()\n    android.util.Log.i("${TAG}", "ANDROID_REPORT_FULLY_DRAWN elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis())\n  }\n`, classStart, "Kotlin reportFullyDrawn");
       mod.modResults.contents = out;
       return mod;
     }
 
     let out = source;
-    const classMatch = out.match(/public class MainActivity[^\{]*\{/);
-    if (!classMatch) throw new Error("[startup-instrumentation] Missing Java MainActivity class body");
     out = injectOnce(out, classMatch[0], `\n    private boolean ox2FirstFrameLogged = false;\n`, "Java MainActivity class body", classMatch[0].length);
     const onCreate = "protected void onCreate(Bundle savedInstanceState) {";
-    out = injectOnce(out, onCreate, `\n        android.util.Log.i("${TAG}", "ANDROID_ON_CREATE elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n`, "onCreate", onCreate.length);
-    const onResume = "protected void onResume() {";
-    out = injectOnce(out, onResume, `\n        android.util.Log.i("${TAG}", "ANDROID_ON_RESUME elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n        if (!ox2FirstFrameLogged) {\n            ox2FirstFrameLogged = true;\n            android.view.Choreographer.getInstance().postFrameCallback(frameTimeNanos -> android.util.Log.i("${TAG}", "ANDROID_FIRST_FRAME frameTimeNanos=" + frameTimeNanos + " elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis()));\n        }\n`, "onResume", onResume.length);
-    out = appendBeforeFinalBrace(out, `\n    @Override\n    public void reportFullyDrawn() {\n        super.reportFullyDrawn();\n        android.util.Log.i("${TAG}", "ANDROID_REPORT_FULLY_DRAWN elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n    }\n`, "Java reportFullyDrawn");
+    out = injectOnce(out, onCreate, `\n        android.util.Log.i("${TAG}", "ANDROID_ON_CREATE elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n        if (!ox2FirstFrameLogged) {\n            ox2FirstFrameLogged = true;\n            android.view.Choreographer.getInstance().postFrameCallback(frameTimeNanos -> android.util.Log.i("${TAG}", "ANDROID_FIRST_FRAME frameTimeNanos=" + frameTimeNanos + " elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis()));\n        }\n`, "onCreate", onCreate.length);
+    out = appendBeforeClassBrace(out, `\n    @Override\n    public void reportFullyDrawn() {\n        super.reportFullyDrawn();\n        android.util.Log.i("${TAG}", "ANDROID_REPORT_FULLY_DRAWN elapsedRealtimeNanos=" + android.os.SystemClock.elapsedRealtimeNanos() + " epochMs=" + System.currentTimeMillis());\n    }\n`, classStart, "Java reportFullyDrawn");
     mod.modResults.contents = out;
     return mod;
   });
